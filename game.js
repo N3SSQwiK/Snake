@@ -24,7 +24,7 @@ const DEFAULT_THEME = {
     name: 'classic',
     colors: {
         background: '#000000',
-        grid: '#111111',
+        grid: '#1a3a1a',
         snake: '#00ff00',
         snakeHead: '#00aa00',
         food: '#ff0000',
@@ -59,7 +59,7 @@ class Renderer {
 
     drawGrid() {
         this.ctx.strokeStyle = this.theme.colors.grid;
-        this.ctx.lineWidth = 0.5;
+        this.ctx.lineWidth = 1;
 
         // Draw vertical lines
         for (let x = 0; x <= GRID_WIDTH; x++) {
