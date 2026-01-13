@@ -23,6 +23,26 @@ The game needs proper user interface screens for navigation: a start menu to beg
   - Wall collision toggle
   - Placeholder for future settings
 
+## Design Requirements
+
+> **MANDATORY**: Use `/game-ui-design` skill before implementing any visual components.
+
+### UI Components Requiring Design
+| Component | Design Elements |
+|-----------|-----------------|
+| Start Menu | Layout, button styles, logo/title treatment, background |
+| Pause Overlay | Semi-transparent backdrop, centered modal, button group |
+| Game Over Screen | Fade animation, score typography, button hierarchy |
+| Settings Screen | Form layout, toggle/switch styles, section headers |
+| Mobile Pause Button | Position, size (44x44px min), icon design |
+
+### Design Considerations
+- Glassmorphism/neo-modern aesthetic (avoid generic AI patterns)
+- Responsive layout for desktop and mobile
+- Consistent button styles across all screens
+- Focus states for keyboard navigation
+- Touch-friendly tap targets (44x44px minimum)
+
 ## Impact
 - Affected specs: `ui-screens` (new capability)
 - Affected code: `index.html` (overlay markup), `styles.css` (overlay styles), `game.js` (UI management)
