@@ -18,7 +18,7 @@ Keep this managed block so 'openspec update' can refresh the instructions.
 <!-- OPENSPEC:END -->
 
 ## Session Continuity
-At session start, read `.claude/CONTINUITY.md`. Present the summary and ask whether to proceed or adjust. Update the file at session end.
+At session start, read `.claude/CONTINUITY.md`. Present the summary and ask whether to proceed or adjust. Update the file after milestones (PR merged, proposal archived).
 
 # CLAUDE.md
 
