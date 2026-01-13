@@ -35,23 +35,32 @@ Browser-based snake game with modern enhancements. Classic gameplay combined wit
 
 ### Theme System
 - **Dual approach**: CSS variables for UI elements, JS objects for Canvas rendering
-- Theme object structure:
+- Default theme: Neo-Arcade Emerald
   ```javascript
   {
     name: 'classic',
     colors: {
-      background: '#000',
-      grid: '#111',
-      snake: '#0f0',
-      snakeHead: '#0a0',
-      food: '#f00',
-      bonusFood: '#ff0',
-      poisonFood: '#f0f'
+      background: '#0a0a0f',
+      grid: '#1a1a24',
+      snake: '#10b981',
+      snakeHead: '#059669',
+      snakeTail: '#34d399',
+      snakeGlow: 'rgba(16, 185, 129, 0.4)',
+      snakeEyes: 'rgba(255, 255, 255, 0.9)',
+      food: '#ef4444',
+      bonusFood: '#f59e0b',
+      poisonFood: '#a855f7'
     }
   }
   ```
 - CSS variables (e.g., `--theme-bg`, `--theme-accent`) for menus and UI
 - Active theme stored in localStorage
+
+### Implementation Rules
+1. **Design before code** - Use `/game-ui-design` skill BEFORE implementing visual components
+2. **Follow proposal requirements** - If proposal says "MANDATORY: use skill X", do it
+3. **Complete proposals first** - Add missing design specs before coding
+4. **Avoid AI aesthetic traps** - No neon colors (#00ff00), no emoji icons, no rainbow gradients
 
 ### Testing Strategy
 - **Unit tests**: Node.js native test runner (`node --test`)
@@ -85,3 +94,20 @@ Browser-based snake game with modern enhancements. Classic gameplay combined wit
 ## External Dependencies
 - None required for core functionality
 - Optional: Web Audio API for sound effects
+
+## Implementation Status
+
+### Completed Specs
+- `core-game-loop` - Game class, state machine, fixed-timestep loop, Renderer
+- `snake-mechanics` - Snake class, movement, growth, self-collision, visual design
+
+### Pending Changes
+- `add-input-handling` - Keyboard/touch controls
+- `add-basic-food` - Food spawning, collision, scoring
+- `add-wall-collision` - Boundary detection
+- `add-ui-screens` - Menus, pause, game over
+- `add-theme-system` - Multiple themes, picker
+- `add-difficulty-system` - Speed progression, food types
+- `add-leaderboard` - High scores, initials entry
+- `add-audio-system` - Sound effects
+- `add-accessibility` - ADA compliance
