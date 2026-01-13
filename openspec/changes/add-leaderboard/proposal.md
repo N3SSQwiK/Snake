@@ -18,6 +18,31 @@ Players want to track their best performances and compete with themselves over t
   - Visual effect when new high score achieved
   - Display "NEW HIGH SCORE" message
 
+## Design Requirements
+
+> **MANDATORY**: Use `/game-ui-design` skill before implementing visual components.
+
+### UI Components Requiring Design
+| Component | Design Elements |
+|-----------|-----------------|
+| Leaderboard Table | Column layout, rank styling, alternating rows, typography |
+| Initials Entry | Arcade-style character selector, current letter highlight, navigation arrows |
+| High Score Celebration | Animation effect (glow/pulse/particles), "NEW HIGH SCORE!" typography |
+| Score Comparison | Current score vs high score display on game over |
+| Empty State | Message when no scores recorded yet |
+
+### Design Considerations
+- Arcade/retro aesthetic for initials input (chunky characters, selection highlight)
+- Table should be scannable with clear visual hierarchy (rank emphasis)
+- Celebration effect should feel rewarding but not overwhelming
+- Dates formatted consistently (e.g., "Jan 13" or "01/13/26")
+- Responsive: table should work on mobile screens
+
+### Animation Specifications
+- Initials selector: letter cycle animation (scroll up/down)
+- High score celebration: 1-2 second duration, non-blocking
+- Table entry: new score highlight/flash on insertion
+
 ## Impact
 - Affected specs: `leaderboard` (new capability)
 - Affected code: `game.js` (StorageManager extension), `index.html` (leaderboard UI), `styles.css` (leaderboard styles)
