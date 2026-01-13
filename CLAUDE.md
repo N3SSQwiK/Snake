@@ -47,6 +47,23 @@ Class-based separation:
 - `AudioManager` - Sound effects, volume control
 - `StorageManager` - Settings, leaderboard persistence
 
+## GitHub + Openspec Workflow
+
+Issues map 1:1 with openspec proposals. Project: https://github.com/users/N3SSQwiK/projects/4
+
+**Creating proposals:** After `openspec validate`, create matching GitHub issue:
+```bash
+gh issue create --title "Add [feature]" --body "..." --label "feature" --milestone "v1.0 - ..."
+gh project item-add 4 --owner N3SSQwiK --url "[issue-url]"
+```
+
+**Implementing:** Reference issue in commits/PRs. Update project board status.
+
+**Archiving:** After `openspec archive [id]`, close the GitHub issue:
+```bash
+gh issue close [number] --comment "Implemented and archived"
+```
+
 ## Development
 
 Run locally with any static file server:

@@ -296,6 +296,36 @@ The user requested a PR with "extensive commentary." The AI created PR #1 with d
 - Instructions for testing locally
 - A list of all commits (individual changes)
 
+### Tracking Progress with GitHub Issues
+
+After establishing the OpenSpec proposals, the user wanted to track progress using GitHub's project management features. The AI set up:
+
+**GitHub Project Board**: A kanban-style board at `github.com/users/N3SSQwiK/projects/4` showing all work items in columns (Todo, In Progress, Done).
+
+**Issues Mapped 1:1 with Proposals**: Rather than creating arbitrary issues, each GitHub issue corresponds directly to one OpenSpec proposal. This maintains a single source of truth — the proposal defines *what* to build, while the issue tracks *progress*.
+
+| Issue | OpenSpec Proposal | Tasks |
+|-------|-------------------|-------|
+| #21 | add-snake-mechanics | 21 |
+| #22 | add-input-handling | 24 |
+| #23 | add-basic-food | 27 |
+| #24 | add-wall-collision | 23 |
+| #25 | add-ui-screens | 36 |
+| #26 | add-leaderboard | 32 |
+| #27 | add-theme-system | 30 |
+| #28 | add-difficulty-system | 39 |
+| #29 | add-audio-system | 40 |
+| #30 | add-accessibility | 48 |
+
+Each issue body links to the proposal files and documents dependencies (e.g., "#22 depends on #21"). This makes the implementation order clear and prevents starting work before prerequisites are complete.
+
+**The Workflow**:
+1. **Creating**: After writing an OpenSpec proposal, create a matching GitHub issue
+2. **Implementing**: Reference the issue in commits and PRs; move card on project board
+3. **Archiving**: After `openspec archive`, close the GitHub issue
+
+This approach prevents the common problem of issues drifting out of sync with specifications. If you need to change scope, update the proposal first, then update the issue to match.
+
 ### Semantic Versioning
 
 When the PR was merged, the user asked for a version tag. **Semantic versioning** uses three numbers: MAJOR.MINOR.PATCH
@@ -321,6 +351,7 @@ The first release was tagged `v0.1.0`:
 | **CSS** | Styling and theming | Standard way to style web pages |
 | **Git** | Version control | Industry standard for tracking code changes |
 | **GitHub** | Code hosting and collaboration | Free, widely used, good PR workflow |
+| **GitHub Issues/Projects** | Progress tracking | 1:1 mapping with OpenSpec proposals |
 | **Node.js** | Running tests | Executes JavaScript outside the browser |
 | **OpenSpec** | Specification workflow | Organized approach to planning and documentation |
 | **VS Code / Terminal** | Development environment | Where the user interacted with files and ran commands |
