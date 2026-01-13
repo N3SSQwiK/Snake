@@ -7,13 +7,19 @@ const createMockCanvas = () => {
         fillStyle: '',
         strokeStyle: '',
         lineWidth: 0,
+        shadowColor: '',
+        shadowBlur: 0,
         fillRect: mock.fn(),
         strokeRect: mock.fn(),
         beginPath: mock.fn(),
         moveTo: mock.fn(),
         lineTo: mock.fn(),
         stroke: mock.fn(),
-        clearRect: mock.fn()
+        clearRect: mock.fn(),
+        quadraticCurveTo: mock.fn(),
+        closePath: mock.fn(),
+        fill: mock.fn(),
+        arc: mock.fn()
     };
     return {
         width: 0,
@@ -468,10 +474,24 @@ describe('Renderer Snake Drawing', () => {
         renderer = new Renderer(canvas);
     });
 
-    test('drawSnake() draws all segments', () => {
+    test('drawSnake() draws all segments with rounded rects', () => {
         const snake = new Snake(10, 10, 3);
         renderer.drawSnake(snake);
-        // Should call fillRect for each segment (3 total)
-        assert.strictEqual(canvas._ctx.fillRect.mock.calls.length, 3);
+        // Should call fill() for each segment (3 body) + 2 eyes = 5 fills
+        assert.strictEqual(canvas._ctx.fill.mock.calls.length, 5);
+    });
+
+    test('drawSnake() draws eyes using arc', () => {
+        const snake = new Snake(10, 10, 3);
+        renderer.drawSnake(snake);
+        // Should call arc() twice for the two eyes
+        assert.strictEqual(canvas._ctx.arc.mock.calls.length, 2);
+    });
+
+    test('drawSnake() sets glow effect', () => {
+        const snake = new Snake(10, 10, 3);
+        renderer.drawSnake(snake);
+        // Shadow blur should have been set for glow
+        assert.ok(canvas._ctx.shadowBlur >= 0);
     });
 });

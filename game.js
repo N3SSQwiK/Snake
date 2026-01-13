@@ -26,17 +26,20 @@ const Direction = {
 const TARGET_FPS = 60;
 const TICK_RATE = 10; // Game logic updates per second
 
-// Default theme colors (Classic)
+// Default theme colors (Neo-Arcade Emerald)
 const DEFAULT_THEME = {
     name: 'classic',
     colors: {
-        background: '#000000',
-        grid: '#1a3a1a',
-        snake: '#00ff00',
-        snakeHead: '#00aa00',
-        food: '#ff0000',
-        bonusFood: '#ffff00',
-        poisonFood: '#ff00ff'
+        background: '#0a0a0f',
+        grid: '#1a1a24',
+        snake: '#10b981',
+        snakeHead: '#059669',
+        snakeTail: '#34d399',
+        snakeGlow: 'rgba(16, 185, 129, 0.4)',
+        snakeEyes: 'rgba(255, 255, 255, 0.9)',
+        food: '#ef4444',
+        bonusFood: '#f59e0b',
+        poisonFood: '#a855f7'
     }
 };
 
@@ -186,16 +189,138 @@ class Renderer {
         );
     }
 
+    drawRoundedRect(x, y, width, height, radius, color) {
+        this.ctx.fillStyle = color;
+        this.ctx.beginPath();
+        this.ctx.moveTo(x + radius, y);
+        this.ctx.lineTo(x + width - radius, y);
+        this.ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+        this.ctx.lineTo(x + width, y + height - radius);
+        this.ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+        this.ctx.lineTo(x + radius, y + height);
+        this.ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+        this.ctx.lineTo(x, y + radius);
+        this.ctx.quadraticCurveTo(x, y, x + radius, y);
+        this.ctx.closePath();
+        this.ctx.fill();
+    }
+
+    lerpColor(color1, color2, t) {
+        // Parse hex colors to RGB
+        const hex1 = color1.replace('#', '');
+        const hex2 = color2.replace('#', '');
+
+        const r1 = parseInt(hex1.substring(0, 2), 16);
+        const g1 = parseInt(hex1.substring(2, 4), 16);
+        const b1 = parseInt(hex1.substring(4, 6), 16);
+
+        const r2 = parseInt(hex2.substring(0, 2), 16);
+        const g2 = parseInt(hex2.substring(2, 4), 16);
+        const b2 = parseInt(hex2.substring(4, 6), 16);
+
+        // Interpolate
+        const r = Math.round(r1 + (r2 - r1) * t);
+        const g = Math.round(g1 + (g2 - g1) * t);
+        const b = Math.round(b1 + (b2 - b1) * t);
+
+        return `rgb(${r}, ${g}, ${b})`;
+    }
+
     drawSnake(snake) {
-        // Draw body segments (tail to head-1) with snake color
-        for (let i = snake.body.length - 1; i > 0; i--) {
+        const colors = this.theme.colors;
+        const bodyLength = snake.body.length;
+
+        // Enable glow effect for the entire snake
+        this.ctx.shadowColor = colors.snakeGlow || 'rgba(16, 185, 129, 0.4)';
+        this.ctx.shadowBlur = 8;
+
+        // Draw body segments (tail to head) with gradient coloring
+        for (let i = bodyLength - 1; i > 0; i--) {
             const segment = snake.body[i];
-            this.drawCell(segment.x, segment.y, this.theme.colors.snake);
+
+            // Calculate gradient: head color (0) -> tail color (1)
+            const t = i / (bodyLength - 1);
+            const tailColor = colors.snakeTail || colors.snake;
+            const segmentColor = this.lerpColor(colors.snakeHead, tailColor, t);
+
+            // Draw rounded segment with slight overlap for connected look
+            const padding = 1;
+            const radius = 4;
+            this.drawRoundedRect(
+                segment.x * CELL_SIZE + padding,
+                segment.y * CELL_SIZE + padding,
+                CELL_SIZE - padding * 2,
+                CELL_SIZE - padding * 2,
+                radius,
+                segmentColor
+            );
         }
 
-        // Draw head with distinct color
+        // Draw head with more prominent rounding
         const head = snake.body[0];
-        this.drawCell(head.x, head.y, this.theme.colors.snakeHead);
+        const headPadding = 1;
+        const headRadius = 6;
+
+        this.drawRoundedRect(
+            head.x * CELL_SIZE + headPadding,
+            head.y * CELL_SIZE + headPadding,
+            CELL_SIZE - headPadding * 2,
+            CELL_SIZE - headPadding * 2,
+            headRadius,
+            colors.snakeHead
+        );
+
+        // Disable shadow for eyes (crisp rendering)
+        this.ctx.shadowBlur = 0;
+
+        // Draw eyes based on direction
+        this.drawSnakeEyes(head, snake.direction, colors.snakeEyes || 'rgba(255, 255, 255, 0.9)');
+    }
+
+    drawSnakeEyes(head, direction, eyeColor) {
+        const centerX = head.x * CELL_SIZE + CELL_SIZE / 2;
+        const centerY = head.y * CELL_SIZE + CELL_SIZE / 2;
+        const eyeRadius = 2.5;
+        const eyeOffset = 4;
+
+        let eye1X, eye1Y, eye2X, eye2Y;
+
+        switch (direction) {
+            case Direction.UP:
+                eye1X = centerX - eyeOffset;
+                eye1Y = centerY - 2;
+                eye2X = centerX + eyeOffset;
+                eye2Y = centerY - 2;
+                break;
+            case Direction.DOWN:
+                eye1X = centerX - eyeOffset;
+                eye1Y = centerY + 2;
+                eye2X = centerX + eyeOffset;
+                eye2Y = centerY + 2;
+                break;
+            case Direction.LEFT:
+                eye1X = centerX - 2;
+                eye1Y = centerY - eyeOffset;
+                eye2X = centerX - 2;
+                eye2Y = centerY + eyeOffset;
+                break;
+            case Direction.RIGHT:
+                eye1X = centerX + 2;
+                eye1Y = centerY - eyeOffset;
+                eye2X = centerX + 2;
+                eye2Y = centerY + eyeOffset;
+                break;
+        }
+
+        // Draw eyes
+        this.ctx.fillStyle = eyeColor;
+        this.ctx.beginPath();
+        this.ctx.arc(eye1X, eye1Y, eyeRadius, 0, Math.PI * 2);
+        this.ctx.fill();
+
+        this.ctx.beginPath();
+        this.ctx.arc(eye2X, eye2Y, eyeRadius, 0, Math.PI * 2);
+        this.ctx.fill();
     }
 }
 
