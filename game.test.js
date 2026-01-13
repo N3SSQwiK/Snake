@@ -24,7 +24,7 @@ const createMockCanvas = () => {
 };
 
 // Import game module
-const { Game, Renderer, GameState, GRID_WIDTH, GRID_HEIGHT, CELL_SIZE } = require('./game.js');
+const { Game, Renderer, Snake, GameState, Direction, GRID_WIDTH, GRID_HEIGHT, CELL_SIZE } = require('./game.js');
 
 // =============================================================================
 // CONSTANTS TESTS
@@ -215,5 +215,263 @@ describe('Game Loop', () => {
         game.tickAccumulator = 500;
         game.reset();
         assert.strictEqual(game.tickAccumulator, 0);
+    });
+});
+
+// =============================================================================
+// DIRECTION CONSTANT TESTS
+// =============================================================================
+
+describe('Direction Constant', () => {
+    test('Direction enum has all required values', () => {
+        assert.strictEqual(Direction.UP, 'UP');
+        assert.strictEqual(Direction.DOWN, 'DOWN');
+        assert.strictEqual(Direction.LEFT, 'LEFT');
+        assert.strictEqual(Direction.RIGHT, 'RIGHT');
+    });
+});
+
+// =============================================================================
+// SNAKE CLASS TESTS
+// =============================================================================
+
+describe('Snake', () => {
+    test('constructor creates snake with correct initial body', () => {
+        const snake = new Snake(10, 10, 3);
+        assert.strictEqual(snake.body.length, 3);
+        assert.deepStrictEqual(snake.body[0], { x: 10, y: 10 }); // head
+        assert.deepStrictEqual(snake.body[1], { x: 9, y: 10 });
+        assert.deepStrictEqual(snake.body[2], { x: 8, y: 10 }); // tail
+    });
+
+    test('initial direction is RIGHT', () => {
+        const snake = new Snake(10, 10, 3);
+        assert.strictEqual(snake.direction, Direction.RIGHT);
+    });
+
+    test('getHead returns first body segment', () => {
+        const snake = new Snake(10, 10, 3);
+        assert.deepStrictEqual(snake.getHead(), { x: 10, y: 10 });
+    });
+
+    test('pendingGrowth starts at 0', () => {
+        const snake = new Snake(10, 10, 3);
+        assert.strictEqual(snake.pendingGrowth, 0);
+    });
+});
+
+// =============================================================================
+// SNAKE MOVEMENT TESTS
+// =============================================================================
+
+describe('Snake Movement', () => {
+    test('move() advances snake in current direction (RIGHT)', () => {
+        const snake = new Snake(10, 10, 3);
+        snake.move();
+        assert.deepStrictEqual(snake.body[0], { x: 11, y: 10 });
+        assert.strictEqual(snake.body.length, 3);
+    });
+
+    test('move() advances snake UP', () => {
+        const snake = new Snake(10, 10, 3);
+        snake.direction = Direction.UP;
+        snake.move();
+        assert.deepStrictEqual(snake.body[0], { x: 10, y: 9 });
+    });
+
+    test('move() advances snake DOWN', () => {
+        const snake = new Snake(10, 10, 3);
+        snake.direction = Direction.DOWN;
+        snake.move();
+        assert.deepStrictEqual(snake.body[0], { x: 10, y: 11 });
+    });
+
+    test('move() advances snake LEFT', () => {
+        const snake = new Snake(10, 10, 3);
+        snake.direction = Direction.LEFT;
+        snake.move();
+        assert.deepStrictEqual(snake.body[0], { x: 9, y: 10 });
+    });
+
+    test('setDirection changes direction', () => {
+        const snake = new Snake(10, 10, 3);
+        snake.setDirection(Direction.UP);
+        assert.strictEqual(snake.direction, Direction.UP);
+    });
+
+    test('setDirection prevents 180-degree turn (RIGHT to LEFT)', () => {
+        const snake = new Snake(10, 10, 3);
+        snake.setDirection(Direction.LEFT); // Opposite of RIGHT
+        assert.strictEqual(snake.direction, Direction.RIGHT); // Unchanged
+    });
+
+    test('setDirection prevents 180-degree turn (UP to DOWN)', () => {
+        const snake = new Snake(10, 10, 3);
+        snake.direction = Direction.UP;
+        snake.setDirection(Direction.DOWN);
+        assert.strictEqual(snake.direction, Direction.UP); // Unchanged
+    });
+});
+
+// =============================================================================
+// SNAKE GROWTH TESTS
+// =============================================================================
+
+describe('Snake Growth', () => {
+    test('grow() sets pending growth', () => {
+        const snake = new Snake(10, 10, 3);
+        snake.grow();
+        assert.strictEqual(snake.pendingGrowth, 1);
+    });
+
+    test('move() increases length when pendingGrowth > 0', () => {
+        const snake = new Snake(10, 10, 3);
+        snake.grow();
+        snake.move();
+        assert.strictEqual(snake.body.length, 4);
+        assert.strictEqual(snake.pendingGrowth, 0);
+    });
+
+    test('grow(amount) supports multiple segment growth', () => {
+        const snake = new Snake(10, 10, 3);
+        snake.grow(3);
+        snake.move();
+        snake.move();
+        snake.move();
+        assert.strictEqual(snake.body.length, 6);
+    });
+});
+
+// =============================================================================
+// SNAKE SELF-COLLISION TESTS
+// =============================================================================
+
+describe('Snake Self-Collision', () => {
+    test('checkSelfCollision returns false for non-colliding snake', () => {
+        const snake = new Snake(10, 10, 3);
+        assert.strictEqual(snake.checkSelfCollision(), false);
+    });
+
+    test('checkSelfCollision returns true when head overlaps body', () => {
+        const snake = new Snake(10, 10, 5);
+        // Snake: head at (10,10), then (9,10), (8,10), (7,10), (6,10)
+        // Move up, left, down to create a loop
+        snake.setDirection(Direction.UP);
+        snake.move(); // head at (10,9)
+        snake.setDirection(Direction.LEFT);
+        snake.move(); // head at (9,9)
+        snake.setDirection(Direction.DOWN);
+        snake.move(); // head at (9,10) - collides with body segment
+        assert.strictEqual(snake.checkSelfCollision(), true);
+    });
+});
+
+// =============================================================================
+// SNAKE RESET TESTS
+// =============================================================================
+
+describe('Snake Reset', () => {
+    test('reset() restores snake to initial state', () => {
+        const snake = new Snake(10, 10, 3);
+        snake.move();
+        snake.move();
+        snake.grow(5);
+        snake.direction = Direction.UP;
+
+        snake.reset(5, 5, 4);
+
+        assert.strictEqual(snake.body.length, 4);
+        assert.deepStrictEqual(snake.body[0], { x: 5, y: 5 });
+        assert.strictEqual(snake.direction, Direction.RIGHT);
+        assert.strictEqual(snake.pendingGrowth, 0);
+    });
+});
+
+// =============================================================================
+// GAME SNAKE INTEGRATION TESTS
+// =============================================================================
+
+describe('Game Snake Integration', () => {
+    let canvas;
+    let game;
+
+    beforeEach(() => {
+        canvas = createMockCanvas();
+        game = new Game(canvas);
+    });
+
+    test('Game has snake instance', () => {
+        assert.ok(game.snake instanceof Snake);
+    });
+
+    test('snake starts at grid center', () => {
+        const centerX = Math.floor(GRID_WIDTH / 2);
+        const centerY = Math.floor(GRID_HEIGHT / 2);
+        assert.deepStrictEqual(game.snake.getHead(), { x: centerX, y: centerY });
+    });
+
+    test('tick moves snake when PLAYING', () => {
+        game.setState(GameState.PLAYING);
+        const initialHead = { ...game.snake.getHead() };
+        game.tick();
+        assert.notDeepStrictEqual(game.snake.getHead(), initialHead);
+    });
+
+    test('tick does not move snake when PAUSED', () => {
+        game.setState(GameState.PAUSED);
+        const initialHead = { ...game.snake.getHead() };
+        game.tick();
+        assert.deepStrictEqual(game.snake.getHead(), initialHead);
+    });
+
+    test('tick does not move snake when MENU', () => {
+        const initialHead = { ...game.snake.getHead() };
+        game.tick();
+        assert.deepStrictEqual(game.snake.getHead(), initialHead);
+    });
+
+    test('self-collision triggers GAMEOVER', () => {
+        game.setState(GameState.PLAYING);
+        // Create a long snake and force collision
+        game.snake = new Snake(10, 10, 5);
+        game.snake.setDirection(Direction.UP);
+        game.tick();
+        game.snake.setDirection(Direction.LEFT);
+        game.tick();
+        game.snake.setDirection(Direction.DOWN);
+        game.tick(); // This should cause self-collision
+        assert.strictEqual(game.state, GameState.GAMEOVER);
+    });
+
+    test('reset restores snake to initial position', () => {
+        game.setState(GameState.PLAYING);
+        game.tick();
+        game.tick();
+        game.reset();
+        const centerX = Math.floor(GRID_WIDTH / 2);
+        const centerY = Math.floor(GRID_HEIGHT / 2);
+        assert.deepStrictEqual(game.snake.getHead(), { x: centerX, y: centerY });
+        assert.strictEqual(game.snake.body.length, 3);
+    });
+});
+
+// =============================================================================
+// RENDERER SNAKE TESTS
+// =============================================================================
+
+describe('Renderer Snake Drawing', () => {
+    let canvas;
+    let renderer;
+
+    beforeEach(() => {
+        canvas = createMockCanvas();
+        renderer = new Renderer(canvas);
+    });
+
+    test('drawSnake() draws all segments', () => {
+        const snake = new Snake(10, 10, 3);
+        renderer.drawSnake(snake);
+        // Should call fillRect for each segment (3 total)
+        assert.strictEqual(canvas._ctx.fillRect.mock.calls.length, 3);
     });
 });

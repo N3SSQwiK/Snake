@@ -16,6 +16,13 @@ const GameState = {
     GAMEOVER: 'GAMEOVER'
 };
 
+const Direction = {
+    UP: 'UP',
+    DOWN: 'DOWN',
+    LEFT: 'LEFT',
+    RIGHT: 'RIGHT'
+};
+
 const TARGET_FPS = 60;
 const TICK_RATE = 10; // Game logic updates per second
 
@@ -32,6 +39,97 @@ const DEFAULT_THEME = {
         poisonFood: '#ff00ff'
     }
 };
+
+// =============================================================================
+// SNAKE CLASS
+// =============================================================================
+
+class Snake {
+    constructor(startX, startY, initialLength = 3) {
+        this.body = [];
+        this.direction = Direction.RIGHT;
+        this.pendingGrowth = 0;
+
+        // Build initial body from head (startX, startY) extending left
+        for (let i = 0; i < initialLength; i++) {
+            this.body.push({ x: startX - i, y: startY });
+        }
+    }
+
+    setDirection(newDirection) {
+        // Prevent 180-degree turns (would cause immediate self-collision)
+        const opposites = {
+            [Direction.UP]: Direction.DOWN,
+            [Direction.DOWN]: Direction.UP,
+            [Direction.LEFT]: Direction.RIGHT,
+            [Direction.RIGHT]: Direction.LEFT
+        };
+
+        if (opposites[this.direction] !== newDirection) {
+            this.direction = newDirection;
+        }
+    }
+
+    move() {
+        const head = this.body[0];
+        let newHead;
+
+        switch (this.direction) {
+            case Direction.UP:
+                newHead = { x: head.x, y: head.y - 1 };
+                break;
+            case Direction.DOWN:
+                newHead = { x: head.x, y: head.y + 1 };
+                break;
+            case Direction.LEFT:
+                newHead = { x: head.x - 1, y: head.y };
+                break;
+            case Direction.RIGHT:
+                newHead = { x: head.x + 1, y: head.y };
+                break;
+        }
+
+        // Add new head to front of body
+        this.body.unshift(newHead);
+
+        // Remove tail unless growing
+        if (this.pendingGrowth > 0) {
+            this.pendingGrowth--;
+        } else {
+            this.body.pop();
+        }
+    }
+
+    grow(amount = 1) {
+        this.pendingGrowth += amount;
+    }
+
+    checkSelfCollision() {
+        const head = this.body[0];
+
+        // Check head against all body segments (skip index 0)
+        for (let i = 1; i < this.body.length; i++) {
+            if (head.x === this.body[i].x && head.y === this.body[i].y) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    getHead() {
+        return this.body[0];
+    }
+
+    reset(startX, startY, initialLength = 3) {
+        this.body = [];
+        this.direction = Direction.RIGHT;
+        this.pendingGrowth = 0;
+
+        for (let i = 0; i < initialLength; i++) {
+            this.body.push({ x: startX - i, y: startY });
+        }
+    }
+}
 
 // =============================================================================
 // RENDERER CLASS
@@ -87,6 +185,18 @@ class Renderer {
             CELL_SIZE - 2
         );
     }
+
+    drawSnake(snake) {
+        // Draw body segments (tail to head-1) with snake color
+        for (let i = snake.body.length - 1; i > 0; i--) {
+            const segment = snake.body[i];
+            this.drawCell(segment.x, segment.y, this.theme.colors.snake);
+        }
+
+        // Draw head with distinct color
+        const head = snake.body[0];
+        this.drawCell(head.x, head.y, this.theme.colors.snakeHead);
+    }
 }
 
 // =============================================================================
@@ -110,6 +220,11 @@ class Game {
         this.lastTime = 0;
         this.tickAccumulator = 0;
         this.tickInterval = 1000 / this.config.tickRate;
+
+        // Initialize snake at center of grid
+        const centerX = Math.floor(this.config.gridWidth / 2);
+        const centerY = Math.floor(this.config.gridHeight / 2);
+        this.snake = new Snake(centerX, centerY, this.config.initialSnakeLength || 3);
 
         // Bind methods
         this.loop = this.loop.bind(this);
@@ -173,10 +288,16 @@ class Game {
             return;
         }
 
-        // Placeholder for future game logic
-        // - Move snake
-        // - Check collisions
-        // - Update score
+        // Move snake
+        this.snake.move();
+
+        // Check self-collision
+        if (this.snake.checkSelfCollision()) {
+            this.setState(GameState.GAMEOVER);
+            return;
+        }
+
+        // Future: check wall collision, food collision, update score
     }
 
     render() {
@@ -185,20 +306,21 @@ class Game {
         // Always draw grid when playing or paused
         if (this.state === GameState.PLAYING || this.state === GameState.PAUSED) {
             this.renderer.drawGrid();
+            this.renderer.drawSnake(this.snake);
         }
 
-        // Placeholder for future rendering
-        // - Draw snake
-        // - Draw food
-        // - Draw UI elements
+        // Future: draw food, UI elements
     }
 
     reset() {
         this.tickAccumulator = 0;
-        // Placeholder for future reset logic
-        // - Reset snake position
-        // - Reset score
-        // - Spawn initial food
+
+        // Reset snake to center
+        const centerX = Math.floor(this.config.gridWidth / 2);
+        const centerY = Math.floor(this.config.gridHeight / 2);
+        this.snake.reset(centerX, centerY, this.config.initialSnakeLength || 3);
+
+        // Future: reset score, spawn initial food
     }
 }
 
@@ -238,5 +360,5 @@ if (typeof document !== 'undefined') {
 // =============================================================================
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { Game, Renderer, GameState, GRID_WIDTH, GRID_HEIGHT, CELL_SIZE };
+    module.exports = { Game, Renderer, Snake, GameState, Direction, GRID_WIDTH, GRID_HEIGHT, CELL_SIZE };
 }
