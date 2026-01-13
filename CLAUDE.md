@@ -64,6 +64,13 @@ gh project item-add 4 --owner N3SSQwiK --url "[issue-url]"
 gh issue close [number] --comment "Implemented and archived"
 ```
 
+## Implementation Rules
+
+1. **Design before code** - Use `/game-ui-design` skill BEFORE implementing any visual components (check proposal's Design Requirements section)
+2. **Follow your own docs** - If proposal says "MANDATORY: use skill X", do it
+3. **Complete proposals first** - Don't implement from incomplete specs; add missing design specs before coding
+4. **Avoid AI aesthetic traps** - No neon colors (#00ff00), no emoji icons, no rainbow gradients; use sophisticated palettes
+
 ## Development
 
 Run locally with any static file server:
