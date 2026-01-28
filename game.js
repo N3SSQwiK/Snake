@@ -325,6 +325,143 @@ class Renderer {
 }
 
 // =============================================================================
+// INPUT HANDLER CLASS
+// =============================================================================
+
+class InputHandler {
+    constructor(canvas, getSnakeDirection) {
+        this.canvas = canvas;
+        this.getSnakeDirection = getSnakeDirection;
+        this.directionQueue = [];
+        this.maxQueueSize = 2;
+
+        // Touch tracking
+        this.touchStartX = null;
+        this.touchStartY = null;
+        this.minSwipeDistance = 30;
+
+        // Bind event handlers
+        this.handleKeyDown = this.handleKeyDown.bind(this);
+        this.handleTouchStart = this.handleTouchStart.bind(this);
+        this.handleTouchEnd = this.handleTouchEnd.bind(this);
+
+        // Attach listeners
+        this.attachListeners();
+    }
+
+    attachListeners() {
+        if (typeof document !== 'undefined') {
+            document.addEventListener('keydown', this.handleKeyDown);
+        }
+        this.canvas.addEventListener('touchstart', this.handleTouchStart, { passive: false });
+        this.canvas.addEventListener('touchend', this.handleTouchEnd, { passive: false });
+    }
+
+    detachListeners() {
+        if (typeof document !== 'undefined') {
+            document.removeEventListener('keydown', this.handleKeyDown);
+        }
+        this.canvas.removeEventListener('touchstart', this.handleTouchStart);
+        this.canvas.removeEventListener('touchend', this.handleTouchEnd);
+    }
+
+    handleKeyDown(event) {
+        const keyMap = {
+            'ArrowUp': Direction.UP,
+            'ArrowDown': Direction.DOWN,
+            'ArrowLeft': Direction.LEFT,
+            'ArrowRight': Direction.RIGHT,
+            'w': Direction.UP,
+            'W': Direction.UP,
+            'a': Direction.LEFT,
+            'A': Direction.LEFT,
+            's': Direction.DOWN,
+            'S': Direction.DOWN,
+            'd': Direction.RIGHT,
+            'D': Direction.RIGHT
+        };
+
+        const direction = keyMap[event.key];
+        if (direction) {
+            event.preventDefault();
+            this.queueDirection(direction);
+        }
+    }
+
+    handleTouchStart(event) {
+        event.preventDefault();
+        const touch = event.touches[0];
+        this.touchStartX = touch.clientX;
+        this.touchStartY = touch.clientY;
+    }
+
+    handleTouchEnd(event) {
+        event.preventDefault();
+        if (this.touchStartX === null || this.touchStartY === null) {
+            return;
+        }
+
+        const touch = event.changedTouches[0];
+        const deltaX = touch.clientX - this.touchStartX;
+        const deltaY = touch.clientY - this.touchStartY;
+
+        // Reset touch tracking
+        this.touchStartX = null;
+        this.touchStartY = null;
+
+        // Check minimum swipe distance
+        const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+        if (distance < this.minSwipeDistance) {
+            return;
+        }
+
+        // Determine dominant direction
+        let direction;
+        if (Math.abs(deltaX) > Math.abs(deltaY)) {
+            direction = deltaX > 0 ? Direction.RIGHT : Direction.LEFT;
+        } else {
+            direction = deltaY > 0 ? Direction.DOWN : Direction.UP;
+        }
+
+        this.queueDirection(direction);
+    }
+
+    queueDirection(newDirection) {
+        // Don't queue if at max capacity
+        if (this.directionQueue.length >= this.maxQueueSize) {
+            return;
+        }
+
+        // Get the reference direction (last queued or current snake direction)
+        const referenceDirection = this.directionQueue.length > 0
+            ? this.directionQueue[this.directionQueue.length - 1]
+            : this.getSnakeDirection();
+
+        // Check for 180° reversal
+        const opposites = {
+            [Direction.UP]: Direction.DOWN,
+            [Direction.DOWN]: Direction.UP,
+            [Direction.LEFT]: Direction.RIGHT,
+            [Direction.RIGHT]: Direction.LEFT
+        };
+
+        if (opposites[referenceDirection] === newDirection) {
+            return; // Reject reversal
+        }
+
+        this.directionQueue.push(newDirection);
+    }
+
+    getNextDirection() {
+        return this.directionQueue.shift() || null;
+    }
+
+    clearQueue() {
+        this.directionQueue = [];
+    }
+}
+
+// =============================================================================
 // GAME CLASS
 // =============================================================================
 
@@ -350,6 +487,9 @@ class Game {
         const centerX = Math.floor(this.config.gridWidth / 2);
         const centerY = Math.floor(this.config.gridHeight / 2);
         this.snake = new Snake(centerX, centerY, this.config.initialSnakeLength || 3);
+
+        // Initialize input handler
+        this.inputHandler = new InputHandler(canvas, () => this.snake.direction);
 
         // Bind methods
         this.loop = this.loop.bind(this);
@@ -413,6 +553,12 @@ class Game {
             return;
         }
 
+        // Process queued input
+        const nextDirection = this.inputHandler.getNextDirection();
+        if (nextDirection) {
+            this.snake.setDirection(nextDirection);
+        }
+
         // Move snake
         this.snake.move();
 
@@ -445,7 +591,15 @@ class Game {
         const centerY = Math.floor(this.config.gridHeight / 2);
         this.snake.reset(centerX, centerY, this.config.initialSnakeLength || 3);
 
+        // Clear input queue
+        this.inputHandler.clearQueue();
+
         // Future: reset score, spawn initial food
+    }
+
+    destroy() {
+        this.stop();
+        this.inputHandler.detachListeners();
     }
 }
 
@@ -485,5 +639,5 @@ if (typeof document !== 'undefined') {
 // =============================================================================
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { Game, Renderer, Snake, GameState, Direction, GRID_WIDTH, GRID_HEIGHT, CELL_SIZE };
+    module.exports = { Game, Renderer, Snake, InputHandler, GameState, Direction, GRID_WIDTH, GRID_HEIGHT, CELL_SIZE };
 }

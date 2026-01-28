@@ -1,6 +1,12 @@
 const { test, describe, beforeEach, mock } = require('node:test');
 const assert = require('node:assert');
 
+// Mock document for Node.js environment
+global.document = {
+    addEventListener: mock.fn(),
+    removeEventListener: mock.fn()
+};
+
 // Mock canvas and its context for Node.js environment
 const createMockCanvas = () => {
     const ctx = {
@@ -25,12 +31,14 @@ const createMockCanvas = () => {
         width: 0,
         height: 0,
         getContext: () => ctx,
+        addEventListener: mock.fn(),
+        removeEventListener: mock.fn(),
         _ctx: ctx // Expose for test assertions
     };
 };
 
 // Import game module
-const { Game, Renderer, Snake, GameState, Direction, GRID_WIDTH, GRID_HEIGHT, CELL_SIZE } = require('./game.js');
+const { Game, Renderer, Snake, InputHandler, GameState, Direction, GRID_WIDTH, GRID_HEIGHT, CELL_SIZE } = require('./game.js');
 
 // =============================================================================
 // CONSTANTS TESTS
@@ -493,5 +501,233 @@ describe('Renderer Snake Drawing', () => {
         renderer.drawSnake(snake);
         // Shadow blur should have been set for glow
         assert.ok(canvas._ctx.shadowBlur >= 0);
+    });
+});
+
+// =============================================================================
+// INPUT HANDLER TESTS
+// =============================================================================
+
+describe('InputHandler', () => {
+    let canvas;
+    let inputHandler;
+    let currentDirection;
+
+    beforeEach(() => {
+        canvas = createMockCanvas();
+        canvas.addEventListener = mock.fn();
+        canvas.removeEventListener = mock.fn();
+        currentDirection = Direction.RIGHT;
+        inputHandler = new InputHandler(canvas, () => currentDirection);
+    });
+
+    test('constructor initializes empty direction queue', () => {
+        assert.deepStrictEqual(inputHandler.directionQueue, []);
+    });
+
+    test('queueDirection adds direction to queue', () => {
+        inputHandler.queueDirection(Direction.UP);
+        assert.strictEqual(inputHandler.directionQueue.length, 1);
+        assert.strictEqual(inputHandler.directionQueue[0], Direction.UP);
+    });
+
+    test('queueDirection rejects 180° reversal (RIGHT to LEFT)', () => {
+        currentDirection = Direction.RIGHT;
+        inputHandler.queueDirection(Direction.LEFT);
+        assert.strictEqual(inputHandler.directionQueue.length, 0);
+    });
+
+    test('queueDirection rejects 180° reversal (UP to DOWN)', () => {
+        currentDirection = Direction.UP;
+        inputHandler.queueDirection(Direction.DOWN);
+        assert.strictEqual(inputHandler.directionQueue.length, 0);
+    });
+
+    test('queueDirection rejects 180° reversal (LEFT to RIGHT)', () => {
+        currentDirection = Direction.LEFT;
+        inputHandler.queueDirection(Direction.RIGHT);
+        assert.strictEqual(inputHandler.directionQueue.length, 0);
+    });
+
+    test('queueDirection rejects 180° reversal (DOWN to UP)', () => {
+        currentDirection = Direction.DOWN;
+        inputHandler.queueDirection(Direction.UP);
+        assert.strictEqual(inputHandler.directionQueue.length, 0);
+    });
+
+    test('queueDirection accepts perpendicular direction', () => {
+        currentDirection = Direction.RIGHT;
+        inputHandler.queueDirection(Direction.UP);
+        assert.strictEqual(inputHandler.directionQueue.length, 1);
+    });
+
+    test('queueDirection accepts same direction', () => {
+        currentDirection = Direction.RIGHT;
+        inputHandler.queueDirection(Direction.RIGHT);
+        assert.strictEqual(inputHandler.directionQueue.length, 1);
+    });
+
+    test('queueDirection respects max queue size', () => {
+        inputHandler.queueDirection(Direction.UP);
+        inputHandler.queueDirection(Direction.RIGHT);
+        inputHandler.queueDirection(Direction.DOWN); // Should be ignored
+        assert.strictEqual(inputHandler.directionQueue.length, 2);
+    });
+
+    test('queueDirection checks against last queued direction for reversal', () => {
+        currentDirection = Direction.RIGHT;
+        inputHandler.queueDirection(Direction.UP);    // Queue: [UP]
+        inputHandler.queueDirection(Direction.DOWN);  // Should be rejected (opposite of UP)
+        assert.strictEqual(inputHandler.directionQueue.length, 1);
+    });
+
+    test('getNextDirection returns and removes first queued direction', () => {
+        inputHandler.queueDirection(Direction.UP);
+        inputHandler.queueDirection(Direction.RIGHT);
+        const next = inputHandler.getNextDirection();
+        assert.strictEqual(next, Direction.UP);
+        assert.strictEqual(inputHandler.directionQueue.length, 1);
+    });
+
+    test('getNextDirection returns null when queue is empty', () => {
+        const next = inputHandler.getNextDirection();
+        assert.strictEqual(next, null);
+    });
+
+    test('clearQueue empties the direction queue', () => {
+        inputHandler.queueDirection(Direction.UP);
+        inputHandler.queueDirection(Direction.RIGHT);
+        inputHandler.clearQueue();
+        assert.deepStrictEqual(inputHandler.directionQueue, []);
+    });
+});
+
+// =============================================================================
+// INPUT HANDLER KEYBOARD TESTS
+// =============================================================================
+
+describe('InputHandler Keyboard', () => {
+    let canvas;
+    let inputHandler;
+    let currentDirection;
+
+    beforeEach(() => {
+        canvas = createMockCanvas();
+        currentDirection = Direction.RIGHT;
+        inputHandler = new InputHandler(canvas, () => currentDirection);
+    });
+
+    test('arrow keys map to directions', () => {
+        // Test ArrowUp (current direction must not be DOWN)
+        inputHandler.clearQueue();
+        currentDirection = Direction.RIGHT;
+        inputHandler.handleKeyDown({ key: 'ArrowUp', preventDefault: mock.fn() });
+        assert.strictEqual(inputHandler.directionQueue[0], Direction.UP);
+
+        // Test ArrowDown (current direction must not be UP)
+        inputHandler.clearQueue();
+        currentDirection = Direction.RIGHT;
+        inputHandler.handleKeyDown({ key: 'ArrowDown', preventDefault: mock.fn() });
+        assert.strictEqual(inputHandler.directionQueue[0], Direction.DOWN);
+
+        // Test ArrowRight (current direction must not be LEFT)
+        inputHandler.clearQueue();
+        currentDirection = Direction.UP;
+        inputHandler.handleKeyDown({ key: 'ArrowRight', preventDefault: mock.fn() });
+        assert.strictEqual(inputHandler.directionQueue[0], Direction.RIGHT);
+
+        // Test ArrowLeft (current direction must not be RIGHT)
+        inputHandler.clearQueue();
+        currentDirection = Direction.UP;
+        inputHandler.handleKeyDown({ key: 'ArrowLeft', preventDefault: mock.fn() });
+        assert.strictEqual(inputHandler.directionQueue[0], Direction.LEFT);
+    });
+
+    test('WASD keys map to directions (lowercase)', () => {
+        // w = UP (current must not be DOWN)
+        inputHandler.clearQueue();
+        currentDirection = Direction.RIGHT;
+        inputHandler.handleKeyDown({ key: 'w', preventDefault: mock.fn() });
+        assert.strictEqual(inputHandler.directionQueue[0], Direction.UP);
+
+        // a = LEFT (current must not be RIGHT)
+        inputHandler.clearQueue();
+        currentDirection = Direction.UP;
+        inputHandler.handleKeyDown({ key: 'a', preventDefault: mock.fn() });
+        assert.strictEqual(inputHandler.directionQueue[0], Direction.LEFT);
+
+        // s = DOWN (current must not be UP)
+        inputHandler.clearQueue();
+        currentDirection = Direction.RIGHT;
+        inputHandler.handleKeyDown({ key: 's', preventDefault: mock.fn() });
+        assert.strictEqual(inputHandler.directionQueue[0], Direction.DOWN);
+
+        // d = RIGHT (current must not be LEFT)
+        inputHandler.clearQueue();
+        currentDirection = Direction.UP;
+        inputHandler.handleKeyDown({ key: 'd', preventDefault: mock.fn() });
+        assert.strictEqual(inputHandler.directionQueue[0], Direction.RIGHT);
+    });
+
+    test('WASD keys map to directions (uppercase)', () => {
+        inputHandler.clearQueue();
+        currentDirection = Direction.RIGHT;
+        inputHandler.handleKeyDown({ key: 'W', preventDefault: mock.fn() });
+        assert.strictEqual(inputHandler.directionQueue[0], Direction.UP);
+    });
+
+    test('non-direction keys are ignored', () => {
+        const event = { key: 'x', preventDefault: mock.fn() };
+        inputHandler.handleKeyDown(event);
+        assert.strictEqual(inputHandler.directionQueue.length, 0);
+        assert.strictEqual(event.preventDefault.mock.calls.length, 0);
+    });
+
+    test('direction keys call preventDefault', () => {
+        currentDirection = Direction.DOWN;
+        const event = { key: 'ArrowUp', preventDefault: mock.fn() };
+        inputHandler.handleKeyDown(event);
+        assert.strictEqual(event.preventDefault.mock.calls.length, 1);
+    });
+});
+
+// =============================================================================
+// GAME INPUT INTEGRATION TESTS
+// =============================================================================
+
+describe('Game Input Integration', () => {
+    let canvas;
+    let game;
+
+    beforeEach(() => {
+        canvas = createMockCanvas();
+        canvas.addEventListener = mock.fn();
+        canvas.removeEventListener = mock.fn();
+        game = new Game(canvas);
+    });
+
+    test('Game has inputHandler instance', () => {
+        assert.ok(game.inputHandler instanceof InputHandler);
+    });
+
+    test('tick applies queued direction to snake', () => {
+        game.setState(GameState.PLAYING);
+        game.inputHandler.queueDirection(Direction.UP);
+        game.tick();
+        assert.strictEqual(game.snake.direction, Direction.UP);
+    });
+
+    test('reset clears input queue', () => {
+        game.inputHandler.queueDirection(Direction.UP);
+        game.inputHandler.queueDirection(Direction.DOWN);
+        game.reset();
+        assert.deepStrictEqual(game.inputHandler.directionQueue, []);
+    });
+
+    test('destroy detaches event listeners', () => {
+        const detachSpy = mock.fn();
+        game.inputHandler.detachListeners = detachSpy;
+        game.destroy();
+        assert.strictEqual(detachSpy.mock.calls.length, 1);
     });
 });
