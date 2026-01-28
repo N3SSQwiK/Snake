@@ -70,6 +70,8 @@ gh issue close [number] --comment "Implemented and archived"
 2. **Follow your own docs** - If proposal says "MANDATORY: use skill X", do it
 3. **Complete proposals first** - Don't implement from incomplete specs; add missing design specs before coding
 4. **Avoid AI aesthetic traps** - No neon colors (#00ff00), no emoji icons, no rainbow gradients; use sophisticated palettes
+5. **Challenge before implementing** - Run `/maestro challenge <change-id>` on non-trivial features to catch edge cases before coding
+6. **Include edge cases in specs** - Every spec should consider: rapid input, resource exhaustion, concurrent operations (see AGENTS.md for checklists)
 
 ## Development
 

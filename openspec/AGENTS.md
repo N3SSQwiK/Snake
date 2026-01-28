@@ -51,10 +51,11 @@ Track these steps as TODOs and complete them one by one.
 1. **Read proposal.md** - Understand what's being built
 2. **Read design.md** (if exists) - Review technical decisions
 3. **Read tasks.md** - Get implementation checklist
-4. **Implement tasks sequentially** - Complete in order
-5. **Confirm completion** - Ensure every item in `tasks.md` is finished before updating statuses
-6. **Update checklist** - After all work is done, set every task to `- [x]` so the list reflects reality
-7. **Approval gate** - Do not start implementation until the proposal is reviewed and approved
+4. **Challenge the proposal** - For non-trivial features, run `/maestro challenge <change-id>` to find gaps before coding
+5. **Implement tasks sequentially** - Complete in order
+6. **Confirm completion** - Ensure every item in `tasks.md` is finished before updating statuses
+7. **Update checklist** - After all work is done, set every task to `- [x]` so the list reflects reality
+8. **Approval gate** - Do not start implementation until the proposal is reviewed and approved
 
 ### Stage 3: Archiving Changes
 After deployment, create separate PR to:
@@ -256,6 +257,36 @@ Every requirement MUST have at least one scenario.
 
 ### Requirement Wording
 - Use SHALL/MUST for normative requirements (avoid should/may unless intentionally non-normative)
+
+### Edge Cases Section
+Every spec SHOULD include edge cases to catch bugs before implementation. Add after scenarios:
+
+```markdown
+#### Edge Cases
+- What if input arrives faster than processing rate?
+- What if the same action repeats rapidly?
+- What if resources are exhausted (memory, queue, connections)?
+- What if concurrent/conflicting inputs occur?
+```
+
+**Domain-specific checklists:**
+
+*Input handling:*
+- [ ] Key repeat / held keys
+- [ ] Input flooding / rate limiting
+- [ ] Focus loss during input
+- [ ] Touch + keyboard conflict
+
+*Network/async:*
+- [ ] Request timeout
+- [ ] Retry storms
+- [ ] Out-of-order responses
+- [ ] Connection loss mid-operation
+
+*State management:*
+- [ ] Race conditions
+- [ ] Stale state reads
+- [ ] Partial updates
 
 ### Delta Operations
 
