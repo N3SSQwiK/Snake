@@ -26,6 +26,12 @@ const Direction = {
 const TARGET_FPS = 60;
 const TICK_RATE = 10; // Game logic updates per second
 
+// Food constants
+const FOOD_POINTS = 10;
+const FOOD_DECAY_TICKS = 100;              // 10s at 10Hz
+const FOOD_DECAY_WARNING_THRESHOLD = 0.25; // Blink at <25%
+const FOOD_MAX_SPAWN_ATTEMPTS = 100;
+
 // Default theme colors (Neo-Arcade Emerald)
 const DEFAULT_THEME = {
     name: 'classic',
@@ -131,6 +137,86 @@ class Snake {
         for (let i = 0; i < initialLength; i++) {
             this.body.push({ x: startX - i, y: startY });
         }
+    }
+}
+
+// =============================================================================
+// FOOD CLASS
+// =============================================================================
+
+class Food {
+    constructor(gridWidth, gridHeight, decayTicks = FOOD_DECAY_TICKS) {
+        this.gridWidth = gridWidth;
+        this.gridHeight = gridHeight;
+        this.decayTicks = decayTicks;
+        this.position = null;
+        this.points = FOOD_POINTS;
+        this.spawnTick = null;
+    }
+
+    spawn(excludePositions, currentTick) {
+        // Try random positions first
+        for (let attempt = 0; attempt < FOOD_MAX_SPAWN_ATTEMPTS; attempt++) {
+            const x = Math.floor(Math.random() * this.gridWidth);
+            const y = Math.floor(Math.random() * this.gridHeight);
+
+            if (!this._isPositionOccupied(x, y, excludePositions)) {
+                this.position = { x, y };
+                this.spawnTick = currentTick;
+                return true;
+            }
+        }
+
+        // Fallback: compute all valid cells and pick one
+        const validCells = [];
+        for (let x = 0; x < this.gridWidth; x++) {
+            for (let y = 0; y < this.gridHeight; y++) {
+                if (!this._isPositionOccupied(x, y, excludePositions)) {
+                    validCells.push({ x, y });
+                }
+            }
+        }
+
+        if (validCells.length > 0) {
+            const randomIndex = Math.floor(Math.random() * validCells.length);
+            this.position = validCells[randomIndex];
+            this.spawnTick = currentTick;
+            return true;
+        }
+
+        // No valid position available (grid is full)
+        return false;
+    }
+
+    _isPositionOccupied(x, y, excludePositions) {
+        return excludePositions.some(pos => pos.x === x && pos.y === y);
+    }
+
+    checkCollision(headPosition) {
+        if (!this.position) {
+            return false;
+        }
+        return this.position.x === headPosition.x && this.position.y === headPosition.y;
+    }
+
+    isExpired(currentTick) {
+        if (this.spawnTick === null) {
+            return false;
+        }
+        return (currentTick - this.spawnTick) >= this.decayTicks;
+    }
+
+    isDecayWarning(currentTick) {
+        if (this.spawnTick === null) {
+            return false;
+        }
+        const ticksRemaining = this.decayTicks - (currentTick - this.spawnTick);
+        return ticksRemaining <= this.decayTicks * FOOD_DECAY_WARNING_THRESHOLD;
+    }
+
+    reset() {
+        this.position = null;
+        this.spawnTick = null;
     }
 }
 
@@ -322,6 +408,90 @@ class Renderer {
         this.ctx.arc(eye2X, eye2Y, eyeRadius, 0, Math.PI * 2);
         this.ctx.fill();
     }
+
+    drawFood(food, isDecayWarning, currentTick) {
+        if (!food.position) {
+            return;
+        }
+
+        // Blink effect: toggle visibility every 5 ticks when decay warning
+        if (isDecayWarning && Math.floor(currentTick / 5) % 2 === 1) {
+            return;
+        }
+
+        const x = food.position.x * CELL_SIZE;
+        const y = food.position.y * CELL_SIZE;
+        const size = CELL_SIZE;
+
+        // Draw glow effect
+        this.ctx.shadowColor = this.theme.colors.food;
+        this.ctx.shadowBlur = 8;
+
+        // Draw apple body
+        this.ctx.fillStyle = this.theme.colors.food;
+        this.ctx.beginPath();
+
+        // Apple shape using bezier curves
+        // Start at top center indent
+        const centerX = x + size / 2;
+        const topY = y + 4;
+        const bottomY = y + size - 2;
+        const leftX = x + 2;
+        const rightX = x + size - 2;
+
+        // Top indent
+        this.ctx.moveTo(centerX, topY + 2);
+
+        // Left curve (top to bottom)
+        this.ctx.bezierCurveTo(
+            leftX - 1, topY + 2,      // control point 1
+            leftX, bottomY - 4,        // control point 2
+            centerX, bottomY           // end point (bottom center)
+        );
+
+        // Right curve (bottom to top)
+        this.ctx.bezierCurveTo(
+            rightX, bottomY - 4,       // control point 1
+            rightX + 1, topY + 2,      // control point 2
+            centerX, topY + 2          // end point (back to top)
+        );
+
+        this.ctx.closePath();
+        this.ctx.fill();
+
+        // Reset shadow for stem and leaf
+        this.ctx.shadowBlur = 0;
+
+        // Draw stem
+        this.ctx.strokeStyle = '#5d4037';  // Brown
+        this.ctx.lineWidth = 2;
+        this.ctx.lineCap = 'round';
+        this.ctx.beginPath();
+        this.ctx.moveTo(centerX, topY + 2);
+        this.ctx.lineTo(centerX + 1, topY - 2);
+        this.ctx.stroke();
+
+        // Draw leaf
+        this.ctx.fillStyle = '#4caf50';  // Green
+        this.ctx.beginPath();
+        this.ctx.ellipse(centerX + 4, topY, 3, 1.5, Math.PI / 4, 0, Math.PI * 2);
+        this.ctx.fill();
+    }
+
+    drawScore(score, length) {
+        // Set text properties
+        this.ctx.font = '14px monospace';
+        this.ctx.textAlign = 'left';
+        this.ctx.textBaseline = 'top';
+
+        // Draw shadow for readability
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        this.ctx.fillText(`Score: ${score}  Length: ${length}`, 11, 11);
+
+        // Draw text
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillText(`Score: ${score}  Length: ${length}`, 10, 10);
+    }
 }
 
 // =============================================================================
@@ -493,6 +663,11 @@ class Game {
         const centerY = Math.floor(this.config.gridHeight / 2);
         this.snake = new Snake(centerX, centerY, this.config.initialSnakeLength || 3);
 
+        // Initialize food
+        this.food = new Food(this.config.gridWidth, this.config.gridHeight);
+        this.score = 0;
+        this.tickCount = 0;
+
         // Initialize input handler
         this.inputHandler = new InputHandler(canvas, () => this.snake.direction);
 
@@ -567,39 +742,67 @@ class Game {
         // Move snake
         this.snake.move();
 
+        // Increment tick count
+        this.tickCount++;
+
         // Check self-collision
         if (this.snake.checkSelfCollision()) {
             this.setState(GameState.GAMEOVER);
             return;
         }
 
-        // Future: check wall collision, food collision, update score
+        // Spawn initial food if none exists
+        if (!this.food.position) {
+            this.food.spawn(this.snake.body, this.tickCount);
+        }
+
+        // Check food collision
+        if (this.food.checkCollision(this.snake.getHead())) {
+            this.score += this.food.points;
+            this.snake.grow();
+            this.food.spawn(this.snake.body, this.tickCount);
+        }
+
+        // Check food decay
+        if (this.food.isExpired(this.tickCount)) {
+            this.food.spawn(this.snake.body, this.tickCount);
+        }
     }
 
     render() {
         this.renderer.clear();
 
-        // Always draw grid when playing or paused
-        if (this.state === GameState.PLAYING || this.state === GameState.PAUSED) {
+        // Draw game elements when playing, paused, or game over
+        if (this.state === GameState.PLAYING || this.state === GameState.PAUSED || this.state === GameState.GAMEOVER) {
             this.renderer.drawGrid();
             this.renderer.drawSnake(this.snake);
-        }
 
-        // Future: draw food, UI elements
+            // Draw food (only when playing or paused)
+            if (this.state !== GameState.GAMEOVER) {
+                const isDecayWarning = this.food.isDecayWarning(this.tickCount);
+                this.renderer.drawFood(this.food, isDecayWarning, this.tickCount);
+            }
+
+            // Draw score (always visible so player sees final score)
+            this.renderer.drawScore(this.score, this.snake.body.length);
+        }
     }
 
     reset() {
         this.tickAccumulator = 0;
+        this.score = 0;
+        this.tickCount = 0;
 
         // Reset snake to center
         const centerX = Math.floor(this.config.gridWidth / 2);
         const centerY = Math.floor(this.config.gridHeight / 2);
         this.snake.reset(centerX, centerY, this.config.initialSnakeLength || 3);
 
+        // Reset food
+        this.food.reset();
+
         // Clear input queue
         this.inputHandler.clearQueue();
-
-        // Future: reset score, spawn initial food
     }
 
     destroy() {
@@ -644,5 +847,10 @@ if (typeof document !== 'undefined') {
 // =============================================================================
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { Game, Renderer, Snake, InputHandler, GameState, Direction, GRID_WIDTH, GRID_HEIGHT, CELL_SIZE };
+    module.exports = {
+        Game, Renderer, Snake, Food, InputHandler,
+        GameState, Direction,
+        GRID_WIDTH, GRID_HEIGHT, CELL_SIZE,
+        FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_MAX_SPAWN_ATTEMPTS
+    };
 }
