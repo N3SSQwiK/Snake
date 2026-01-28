@@ -16,6 +16,28 @@ The system SHALL spawn food at random grid positions that do not overlap with th
 - **WHEN** food spawns
 - **THEN** the food position does not overlap any snake segment
 
+#### Scenario: Spawn with bounded attempts
+- **GIVEN** the grid has limited free cells
+- **WHEN** random spawn attempts exceed max tries (e.g., 100)
+- **THEN** the system computes valid cells and selects randomly from them
+
+### Requirement: Food Decay
+The system SHALL decay uneaten food after a timeout, preventing grid congestion.
+
+#### Scenario: Food expires
+- **GIVEN** food has been spawned
+- **WHEN** the food is not eaten within the decay timeout
+- **THEN** the food disappears and new food spawns at a different position
+
+#### Scenario: Decay timer reset
+- **WHEN** new food spawns (after eating or decay)
+- **THEN** the decay timer resets to full duration
+
+#### Scenario: Visual decay warning
+- **GIVEN** food is approaching decay timeout
+- **WHEN** less than 25% of decay time remains
+- **THEN** the food visually indicates it will disappear soon (e.g., blinking)
+
 ### Requirement: Food Collision
 The system SHALL detect when the snake's head occupies the same cell as food.
 
@@ -57,8 +79,18 @@ The system SHALL track and display the player's current score and snake length.
 - **THEN** the score is reset to zero
 
 ### Requirement: Food Rendering
-The system SHALL render food as a distinctly colored cell on the grid.
+The system SHALL render food as a distinctly colored cell on the grid using the current theme's food color.
 
 #### Scenario: Render food
 - **WHEN** the game renders a frame
-- **THEN** the food is drawn at its grid position with the food color
+- **THEN** the food is drawn at its grid position using `theme.colors.food`
+
+#### Scenario: Render decay warning
+- **GIVEN** food is in decay warning state (< 25% time remaining)
+- **WHEN** the game renders a frame
+- **THEN** the food blinks or pulses to indicate imminent decay
+
+#### Edge Cases
+- Spawn uses bounded random attempts, falling back to computed valid cells
+- Food decay prevents grid congestion regardless of snake length
+- Theme colors used (not hardcoded) for accessibility across themes
