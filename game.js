@@ -50,6 +50,41 @@ const DEFAULT_THEME = {
 };
 
 // =============================================================================
+// STORAGE MANAGER CLASS
+// =============================================================================
+
+class StorageManager {
+    constructor(prefix = 'snake_') {
+        this.prefix = prefix;
+    }
+
+    get(key, defaultValue) {
+        try {
+            const value = localStorage.getItem(this.prefix + key);
+            return value !== null ? JSON.parse(value) : defaultValue;
+        } catch {
+            return defaultValue;
+        }
+    }
+
+    set(key, value) {
+        try {
+            localStorage.setItem(this.prefix + key, JSON.stringify(value));
+        } catch {
+            // Ignore errors (e.g., private browsing mode)
+        }
+    }
+
+    remove(key) {
+        try {
+            localStorage.removeItem(this.prefix + key);
+        } catch {
+            // Ignore errors
+        }
+    }
+}
+
+// =============================================================================
 // SNAKE CLASS
 // =============================================================================
 
@@ -127,6 +162,10 @@ class Snake {
 
     getHead() {
         return this.body[0];
+    }
+
+    setHeadPosition(pos) {
+        this.body[0] = pos;
     }
 
     reset(startX, startY, initialLength = 3) {
@@ -661,6 +700,9 @@ class Game {
         this.tickAccumulator = 0;
         this.tickInterval = 1000 / this.config.tickRate;
 
+        // Initialize storage manager
+        this.storage = new StorageManager();
+
         // Initialize snake at center of grid
         const centerX = Math.floor(this.config.gridWidth / 2);
         const centerY = Math.floor(this.config.gridHeight / 2);
@@ -670,6 +712,9 @@ class Game {
         this.food = new Food(this.config.gridWidth, this.config.gridHeight);
         this.score = 0;
         this.tickCount = 0;
+
+        // Wall collision setting (true = GAMEOVER on wall hit, false = wrap-around)
+        this.wallCollisionEnabled = this.storage.get('wallCollision', true);
 
         // Initialize input handler
         this.inputHandler = new InputHandler(canvas, () => this.snake.direction);
@@ -693,6 +738,26 @@ class Game {
     onStateChange(oldState, newState) {
         // Hook for state change side effects
         console.log(`State changed: ${oldState} -> ${newState}`);
+    }
+
+    checkWallCollision(head) {
+        return head.x < 0 || head.x >= this.config.gridWidth ||
+               head.y < 0 || head.y >= this.config.gridHeight;
+    }
+
+    wrapPosition(pos) {
+        const w = this.config.gridWidth;
+        const h = this.config.gridHeight;
+        // Double modulo handles negative values: (-1 % 20) = -1, ((-1 % 20) + 20) % 20 = 19
+        return {
+            x: ((pos.x % w) + w) % w,
+            y: ((pos.y % h) + h) % h
+        };
+    }
+
+    setWallCollision(enabled) {
+        this.wallCollisionEnabled = enabled;
+        this.storage.set('wallCollision', enabled);
     }
 
     start() {
@@ -748,7 +813,22 @@ class Game {
         // Increment tick count
         this.tickCount++;
 
-        // Check self-collision
+        // Get current head position
+        const head = this.snake.getHead();
+
+        // Apply wrap-around if wall collision is disabled
+        if (!this.wallCollisionEnabled) {
+            const wrapped = this.wrapPosition(head);
+            this.snake.setHeadPosition(wrapped);
+        }
+
+        // Check wall collision (only if enabled)
+        if (this.wallCollisionEnabled && this.checkWallCollision(head)) {
+            this.setState(GameState.GAMEOVER);
+            return;
+        }
+
+        // Check self-collision (AFTER wrap is applied)
         if (this.snake.checkSelfCollision()) {
             this.setState(GameState.GAMEOVER);
             return;
@@ -851,7 +931,7 @@ if (typeof document !== 'undefined') {
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
-        Game, Renderer, Snake, Food, InputHandler,
+        Game, Renderer, Snake, Food, InputHandler, StorageManager,
         GameState, Direction,
         GRID_WIDTH, GRID_HEIGHT, CELL_SIZE,
         FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_MAX_SPAWN_ATTEMPTS

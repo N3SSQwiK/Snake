@@ -7,6 +7,20 @@ global.document = {
     removeEventListener: mock.fn()
 };
 
+// Mock localStorage for Node.js environment
+const createMockLocalStorage = () => {
+    let store = {};
+    return {
+        getItem: (key) => store[key] ?? null,
+        setItem: (key, value) => { store[key] = String(value); },
+        removeItem: (key) => { delete store[key]; },
+        clear: () => { store = {}; },
+        _getStore: () => store  // For test inspection
+    };
+};
+
+global.localStorage = createMockLocalStorage();
+
 // Mock canvas and its context for Node.js environment
 const createMockCanvas = () => {
     const ctx = {
@@ -46,7 +60,7 @@ const createMockCanvas = () => {
 
 // Import game module
 const {
-    Game, Renderer, Snake, Food, InputHandler,
+    Game, Renderer, Snake, Food, InputHandler, StorageManager,
     GameState, Direction,
     GRID_WIDTH, GRID_HEIGHT, CELL_SIZE,
     FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_MAX_SPAWN_ATTEMPTS
@@ -283,6 +297,20 @@ describe('Snake', () => {
     test('pendingGrowth starts at 0', () => {
         const snake = new Snake(10, 10, 3);
         assert.strictEqual(snake.pendingGrowth, 0);
+    });
+
+    test('setHeadPosition updates head position', () => {
+        const snake = new Snake(10, 10, 3);
+        snake.setHeadPosition({ x: 5, y: 5 });
+        assert.deepStrictEqual(snake.getHead(), { x: 5, y: 5 });
+    });
+
+    test('setHeadPosition preserves body segments', () => {
+        const snake = new Snake(10, 10, 3);
+        snake.setHeadPosition({ x: 5, y: 5 });
+        assert.strictEqual(snake.body.length, 3);
+        assert.deepStrictEqual(snake.body[1], { x: 9, y: 10 });
+        assert.deepStrictEqual(snake.body[2], { x: 8, y: 10 });
     });
 });
 
@@ -1149,5 +1177,334 @@ describe('Food Constants', () => {
     test('FOOD_MAX_SPAWN_ATTEMPTS is defined', () => {
         assert.strictEqual(typeof FOOD_MAX_SPAWN_ATTEMPTS, 'number');
         assert.strictEqual(FOOD_MAX_SPAWN_ATTEMPTS, 100);
+    });
+});
+
+// =============================================================================
+// STORAGE MANAGER TESTS
+// =============================================================================
+
+describe('StorageManager', () => {
+    beforeEach(() => {
+        global.localStorage.clear();
+    });
+
+    test('constructor sets prefix', () => {
+        const storage = new StorageManager('test_');
+        assert.strictEqual(storage.prefix, 'test_');
+    });
+
+    test('default prefix is snake_', () => {
+        const storage = new StorageManager();
+        assert.strictEqual(storage.prefix, 'snake_');
+    });
+
+    test('get returns default value when key not found', () => {
+        const storage = new StorageManager();
+        assert.strictEqual(storage.get('missing', 'default'), 'default');
+    });
+
+    test('get returns default value when key is null', () => {
+        const storage = new StorageManager();
+        assert.strictEqual(storage.get('missing', null), null);
+    });
+
+    test('set stores value with prefix', () => {
+        const storage = new StorageManager('test_');
+        storage.set('key', 'value');
+        assert.strictEqual(global.localStorage.getItem('test_key'), '"value"');
+    });
+
+    test('get retrieves stored value', () => {
+        const storage = new StorageManager();
+        storage.set('mykey', 42);
+        assert.strictEqual(storage.get('mykey', 0), 42);
+    });
+
+    test('set/get handles boolean values', () => {
+        const storage = new StorageManager();
+        storage.set('flag', true);
+        assert.strictEqual(storage.get('flag', false), true);
+        storage.set('flag', false);
+        assert.strictEqual(storage.get('flag', true), false);
+    });
+
+    test('set/get handles object values', () => {
+        const storage = new StorageManager();
+        const obj = { name: 'test', score: 100 };
+        storage.set('data', obj);
+        assert.deepStrictEqual(storage.get('data', null), obj);
+    });
+
+    test('set/get handles array values', () => {
+        const storage = new StorageManager();
+        const arr = [1, 2, 3];
+        storage.set('list', arr);
+        assert.deepStrictEqual(storage.get('list', []), arr);
+    });
+
+    test('remove deletes key', () => {
+        const storage = new StorageManager();
+        storage.set('key', 'value');
+        storage.remove('key');
+        assert.strictEqual(storage.get('key', 'default'), 'default');
+    });
+
+    test('get handles invalid JSON gracefully', () => {
+        const storage = new StorageManager();
+        global.localStorage.setItem('snake_bad', 'not valid json{');
+        assert.strictEqual(storage.get('bad', 'fallback'), 'fallback');
+    });
+});
+
+// =============================================================================
+// WALL COLLISION TESTS
+// =============================================================================
+
+describe('Game Wall Collision', () => {
+    let canvas;
+    let game;
+
+    beforeEach(() => {
+        global.localStorage.clear();
+        canvas = createMockCanvas();
+        game = new Game(canvas);
+    });
+
+    test('checkWallCollision returns true when x < 0', () => {
+        assert.strictEqual(game.checkWallCollision({ x: -1, y: 10 }), true);
+    });
+
+    test('checkWallCollision returns true when x >= gridWidth', () => {
+        assert.strictEqual(game.checkWallCollision({ x: 20, y: 10 }), true);
+        assert.strictEqual(game.checkWallCollision({ x: 25, y: 10 }), true);
+    });
+
+    test('checkWallCollision returns true when y < 0', () => {
+        assert.strictEqual(game.checkWallCollision({ x: 10, y: -1 }), true);
+    });
+
+    test('checkWallCollision returns true when y >= gridHeight', () => {
+        assert.strictEqual(game.checkWallCollision({ x: 10, y: 20 }), true);
+        assert.strictEqual(game.checkWallCollision({ x: 10, y: 25 }), true);
+    });
+
+    test('checkWallCollision returns false for valid center position', () => {
+        assert.strictEqual(game.checkWallCollision({ x: 10, y: 10 }), false);
+    });
+
+    test('checkWallCollision returns false for edge positions (inside)', () => {
+        assert.strictEqual(game.checkWallCollision({ x: 0, y: 0 }), false);
+        assert.strictEqual(game.checkWallCollision({ x: 19, y: 0 }), false);
+        assert.strictEqual(game.checkWallCollision({ x: 0, y: 19 }), false);
+        assert.strictEqual(game.checkWallCollision({ x: 19, y: 19 }), false);
+    });
+
+    test('wall collision triggers GAMEOVER when enabled', () => {
+        game.setState(GameState.PLAYING);
+        game.wallCollisionEnabled = true;
+        // Position snake near right edge
+        game.snake.body = [
+            { x: 19, y: 10 },
+            { x: 18, y: 10 },
+            { x: 17, y: 10 }
+        ];
+        game.snake.direction = Direction.RIGHT;
+        game.tick(); // Head moves to x=20, which is out of bounds
+        assert.strictEqual(game.state, GameState.GAMEOVER);
+    });
+
+    test('wall collision does not trigger GAMEOVER when disabled', () => {
+        game.setState(GameState.PLAYING);
+        game.wallCollisionEnabled = false;
+        // Position snake near right edge
+        game.snake.body = [
+            { x: 19, y: 10 },
+            { x: 18, y: 10 },
+            { x: 17, y: 10 }
+        ];
+        game.snake.direction = Direction.RIGHT;
+        game.tick(); // Head moves to x=20, should wrap to x=0
+        assert.strictEqual(game.state, GameState.PLAYING);
+        assert.strictEqual(game.snake.getHead().x, 0);
+    });
+
+    test('wallCollisionEnabled defaults to true', () => {
+        assert.strictEqual(game.wallCollisionEnabled, true);
+    });
+
+    test('wallCollisionEnabled loads from storage', () => {
+        global.localStorage.clear();
+        global.localStorage.setItem('snake_wallCollision', 'false');
+        const newGame = new Game(createMockCanvas());
+        assert.strictEqual(newGame.wallCollisionEnabled, false);
+    });
+
+    test('setWallCollision updates setting and saves to storage', () => {
+        game.setWallCollision(false);
+        assert.strictEqual(game.wallCollisionEnabled, false);
+        assert.strictEqual(global.localStorage.getItem('snake_wallCollision'), 'false');
+    });
+});
+
+// =============================================================================
+// WRAP-AROUND TESTS
+// =============================================================================
+
+describe('Game Wrap-Around', () => {
+    let canvas;
+    let game;
+
+    beforeEach(() => {
+        global.localStorage.clear();
+        canvas = createMockCanvas();
+        game = new Game(canvas);
+        game.wallCollisionEnabled = false;
+    });
+
+    test('wrapPosition wraps right edge to left', () => {
+        const wrapped = game.wrapPosition({ x: 20, y: 10 });
+        assert.strictEqual(wrapped.x, 0);
+        assert.strictEqual(wrapped.y, 10);
+    });
+
+    test('wrapPosition wraps left edge to right', () => {
+        const wrapped = game.wrapPosition({ x: -1, y: 10 });
+        assert.strictEqual(wrapped.x, 19);
+        assert.strictEqual(wrapped.y, 10);
+    });
+
+    test('wrapPosition wraps bottom edge to top', () => {
+        const wrapped = game.wrapPosition({ x: 10, y: 20 });
+        assert.strictEqual(wrapped.x, 10);
+        assert.strictEqual(wrapped.y, 0);
+    });
+
+    test('wrapPosition wraps top edge to bottom', () => {
+        const wrapped = game.wrapPosition({ x: 10, y: -1 });
+        assert.strictEqual(wrapped.x, 10);
+        assert.strictEqual(wrapped.y, 19);
+    });
+
+    test('wrapPosition handles corner case (-1, -1)', () => {
+        const wrapped = game.wrapPosition({ x: -1, y: -1 });
+        assert.strictEqual(wrapped.x, 19);
+        assert.strictEqual(wrapped.y, 19);
+    });
+
+    test('wrapPosition handles corner case (20, 20)', () => {
+        const wrapped = game.wrapPosition({ x: 20, y: 20 });
+        assert.strictEqual(wrapped.x, 0);
+        assert.strictEqual(wrapped.y, 0);
+    });
+
+    test('wrapPosition does not modify valid positions', () => {
+        const wrapped = game.wrapPosition({ x: 10, y: 10 });
+        assert.strictEqual(wrapped.x, 10);
+        assert.strictEqual(wrapped.y, 10);
+    });
+
+    test('snake wraps from right to left during tick', () => {
+        game.setState(GameState.PLAYING);
+        game.snake.body = [
+            { x: 19, y: 10 },
+            { x: 18, y: 10 },
+            { x: 17, y: 10 }
+        ];
+        game.snake.direction = Direction.RIGHT;
+        game.tick();
+        assert.strictEqual(game.snake.getHead().x, 0);
+        assert.strictEqual(game.snake.getHead().y, 10);
+    });
+
+    test('snake wraps from left to right during tick', () => {
+        game.setState(GameState.PLAYING);
+        game.snake.body = [
+            { x: 0, y: 10 },
+            { x: 1, y: 10 },
+            { x: 2, y: 10 }
+        ];
+        game.snake.direction = Direction.LEFT;
+        game.tick();
+        assert.strictEqual(game.snake.getHead().x, 19);
+    });
+
+    test('snake wraps from bottom to top during tick', () => {
+        game.setState(GameState.PLAYING);
+        game.snake.body = [
+            { x: 10, y: 19 },
+            { x: 10, y: 18 },
+            { x: 10, y: 17 }
+        ];
+        game.snake.direction = Direction.DOWN;
+        game.tick();
+        assert.strictEqual(game.snake.getHead().y, 0);
+    });
+
+    test('snake wraps from top to bottom during tick', () => {
+        game.setState(GameState.PLAYING);
+        game.snake.body = [
+            { x: 10, y: 0 },
+            { x: 10, y: 1 },
+            { x: 10, y: 2 }
+        ];
+        game.snake.direction = Direction.UP;
+        game.tick();
+        assert.strictEqual(game.snake.getHead().y, 19);
+    });
+
+    test('self-collision detected after wrap (head wraps into body)', () => {
+        game.setState(GameState.PLAYING);
+        // Create a snake that wraps and collides with itself
+        // Snake body fills from x=0 to x=5 on y=10
+        // Plus wrapping position at x=19
+        game.snake.body = [
+            { x: 0, y: 10 },    // head at left edge
+            { x: 19, y: 10 },   // body segment at right edge (wrap destination)
+            { x: 18, y: 10 },
+            { x: 17, y: 10 }
+        ];
+        game.snake.direction = Direction.LEFT;
+        game.tick(); // Head wraps to x=19, collides with body[1]
+        assert.strictEqual(game.state, GameState.GAMEOVER);
+    });
+
+    test('food at wrap destination is collected', () => {
+        game.setState(GameState.PLAYING);
+        game.snake.body = [
+            { x: 19, y: 10 },
+            { x: 18, y: 10 },
+            { x: 17, y: 10 }
+        ];
+        game.snake.direction = Direction.RIGHT;
+        game.food.position = { x: 0, y: 10 }; // Food at wrap destination
+        game.food.spawnTick = 0;
+        const initialScore = game.score;
+        game.tick(); // Snake wraps to x=0 and eats food
+        assert.strictEqual(game.score, initialScore + FOOD_POINTS);
+    });
+});
+
+// =============================================================================
+// GAME SETTINGS PERSISTENCE TESTS
+// =============================================================================
+
+describe('Game Settings Persistence', () => {
+    beforeEach(() => {
+        global.localStorage.clear();
+    });
+
+    test('wallCollisionEnabled survives game.reset()', () => {
+        const canvas = createMockCanvas();
+        const game = new Game(canvas);
+        game.setWallCollision(false);
+        game.reset();
+        assert.strictEqual(game.wallCollisionEnabled, false);
+    });
+
+    test('Game has storage instance', () => {
+        const canvas = createMockCanvas();
+        const game = new Game(canvas);
+        assert.ok(game.storage instanceof StorageManager);
     });
 });
