@@ -6,14 +6,16 @@ Food is essential for gameplay - it gives the player a goal and causes the snake
 ## What Changes
 - Create Food class with:
   - Position (grid coordinates)
-  - Random spawn logic (avoiding snake body)
+  - Random spawn logic (avoiding snake body, bounded attempts)
   - Food-snake collision detection
+  - **Decay timer** - uneaten food disappears after timeout, preventing grid congestion
+  - Visual decay warning (blinking when about to expire)
 - Add scoring system:
   - Current score counter
   - Snake length display
   - Score increment on food eaten
 - Integrate with Game tick cycle
-- Render food and score display
+- Render food and score display (canvas-based, top-left corner)
 
 ## Design Requirements
 

@@ -13,8 +13,12 @@ const createMockCanvas = () => {
         fillStyle: '',
         strokeStyle: '',
         lineWidth: 0,
+        lineCap: '',
         shadowColor: '',
         shadowBlur: 0,
+        font: '',
+        textAlign: '',
+        textBaseline: '',
         fillRect: mock.fn(),
         strokeRect: mock.fn(),
         beginPath: mock.fn(),
@@ -23,9 +27,12 @@ const createMockCanvas = () => {
         stroke: mock.fn(),
         clearRect: mock.fn(),
         quadraticCurveTo: mock.fn(),
+        bezierCurveTo: mock.fn(),
+        ellipse: mock.fn(),
         closePath: mock.fn(),
         fill: mock.fn(),
-        arc: mock.fn()
+        arc: mock.fn(),
+        fillText: mock.fn()
     };
     return {
         width: 0,
@@ -38,7 +45,12 @@ const createMockCanvas = () => {
 };
 
 // Import game module
-const { Game, Renderer, Snake, InputHandler, GameState, Direction, GRID_WIDTH, GRID_HEIGHT, CELL_SIZE } = require('./game.js');
+const {
+    Game, Renderer, Snake, Food, InputHandler,
+    GameState, Direction,
+    GRID_WIDTH, GRID_HEIGHT, CELL_SIZE,
+    FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_MAX_SPAWN_ATTEMPTS
+} = require('./game.js');
 
 // =============================================================================
 // CONSTANTS TESTS
@@ -736,5 +748,406 @@ describe('Game Input Integration', () => {
         game.inputHandler.detachListeners = detachSpy;
         game.destroy();
         assert.strictEqual(detachSpy.mock.calls.length, 1);
+    });
+});
+
+// =============================================================================
+// FOOD CLASS TESTS
+// =============================================================================
+
+describe('Food', () => {
+    test('constructor initializes with correct defaults', () => {
+        const food = new Food(20, 20);
+        assert.strictEqual(food.gridWidth, 20);
+        assert.strictEqual(food.gridHeight, 20);
+        assert.strictEqual(food.decayTicks, FOOD_DECAY_TICKS);
+        assert.strictEqual(food.position, null);
+        assert.strictEqual(food.points, FOOD_POINTS);
+        assert.strictEqual(food.spawnTick, null);
+    });
+
+    test('constructor accepts custom decay ticks', () => {
+        const food = new Food(20, 20, 50);
+        assert.strictEqual(food.decayTicks, 50);
+    });
+
+    test('spawn places food at valid position', () => {
+        const food = new Food(20, 20);
+        const result = food.spawn([], 0);
+        assert.strictEqual(result, true);
+        assert.notStrictEqual(food.position, null);
+        assert.ok(food.position.x >= 0 && food.position.x < 20);
+        assert.ok(food.position.y >= 0 && food.position.y < 20);
+        assert.strictEqual(food.spawnTick, 0);
+    });
+
+    test('spawn avoids excluded positions', () => {
+        const food = new Food(2, 2); // Small grid for predictable testing
+        const excludePositions = [
+            { x: 0, y: 0 },
+            { x: 1, y: 0 },
+            { x: 0, y: 1 }
+        ];
+        const result = food.spawn(excludePositions, 5);
+        assert.strictEqual(result, true);
+        // Only (1, 1) should be available
+        assert.deepStrictEqual(food.position, { x: 1, y: 1 });
+        assert.strictEqual(food.spawnTick, 5);
+    });
+
+    test('spawn returns false when grid is full', () => {
+        const food = new Food(2, 2);
+        const excludePositions = [
+            { x: 0, y: 0 },
+            { x: 1, y: 0 },
+            { x: 0, y: 1 },
+            { x: 1, y: 1 }
+        ];
+        const result = food.spawn(excludePositions, 0);
+        assert.strictEqual(result, false);
+    });
+
+    test('spawn clears food state when grid is full', () => {
+        const food = new Food(2, 2);
+        // Set initial food position
+        food.position = { x: 0, y: 0 };
+        food.spawnTick = 10;
+
+        // Try to spawn on full grid
+        const excludePositions = [
+            { x: 0, y: 0 },
+            { x: 1, y: 0 },
+            { x: 0, y: 1 },
+            { x: 1, y: 1 }
+        ];
+        food.spawn(excludePositions, 20);
+
+        // Food state should be cleared to prevent stale collection
+        assert.strictEqual(food.position, null);
+        assert.strictEqual(food.spawnTick, null);
+    });
+
+    test('spawn uses fallback when random attempts fail', () => {
+        const food = new Food(3, 3);
+        // Exclude all but one position - forces fallback
+        const excludePositions = [];
+        for (let x = 0; x < 3; x++) {
+            for (let y = 0; y < 3; y++) {
+                if (x !== 2 || y !== 2) {
+                    excludePositions.push({ x, y });
+                }
+            }
+        }
+        const result = food.spawn(excludePositions, 10);
+        assert.strictEqual(result, true);
+        assert.deepStrictEqual(food.position, { x: 2, y: 2 });
+    });
+});
+
+// =============================================================================
+// FOOD COLLISION TESTS
+// =============================================================================
+
+describe('Food Collision', () => {
+    test('checkCollision returns true when positions match', () => {
+        const food = new Food(20, 20);
+        food.position = { x: 5, y: 5 };
+        assert.strictEqual(food.checkCollision({ x: 5, y: 5 }), true);
+    });
+
+    test('checkCollision returns false when positions differ', () => {
+        const food = new Food(20, 20);
+        food.position = { x: 5, y: 5 };
+        assert.strictEqual(food.checkCollision({ x: 6, y: 5 }), false);
+        assert.strictEqual(food.checkCollision({ x: 5, y: 6 }), false);
+    });
+
+    test('checkCollision returns false when position is null', () => {
+        const food = new Food(20, 20);
+        assert.strictEqual(food.checkCollision({ x: 5, y: 5 }), false);
+    });
+});
+
+// =============================================================================
+// FOOD DECAY TESTS
+// =============================================================================
+
+describe('Food Decay', () => {
+    test('isExpired returns false before decay time', () => {
+        const food = new Food(20, 20, 100);
+        food.spawnTick = 0;
+        assert.strictEqual(food.isExpired(50), false);
+        assert.strictEqual(food.isExpired(99), false);
+    });
+
+    test('isExpired returns true at decay time', () => {
+        const food = new Food(20, 20, 100);
+        food.spawnTick = 0;
+        assert.strictEqual(food.isExpired(100), true);
+    });
+
+    test('isExpired returns true after decay time', () => {
+        const food = new Food(20, 20, 100);
+        food.spawnTick = 0;
+        assert.strictEqual(food.isExpired(150), true);
+    });
+
+    test('isExpired returns false when spawnTick is null', () => {
+        const food = new Food(20, 20, 100);
+        assert.strictEqual(food.isExpired(100), false);
+    });
+
+    test('isDecayWarning returns false when more than 25% time remaining', () => {
+        const food = new Food(20, 20, 100);
+        food.spawnTick = 0;
+        assert.strictEqual(food.isDecayWarning(50), false); // 50% remaining
+        assert.strictEqual(food.isDecayWarning(74), false); // 26% remaining
+    });
+
+    test('isDecayWarning returns true at 25% threshold', () => {
+        const food = new Food(20, 20, 100);
+        food.spawnTick = 0;
+        assert.strictEqual(food.isDecayWarning(75), true); // 25% remaining
+    });
+
+    test('isDecayWarning returns true below 25% threshold', () => {
+        const food = new Food(20, 20, 100);
+        food.spawnTick = 0;
+        assert.strictEqual(food.isDecayWarning(90), true); // 10% remaining
+    });
+
+    test('isDecayWarning returns false when spawnTick is null', () => {
+        const food = new Food(20, 20, 100);
+        assert.strictEqual(food.isDecayWarning(100), false);
+    });
+
+    test('reset clears position and spawnTick', () => {
+        const food = new Food(20, 20);
+        food.position = { x: 5, y: 5 };
+        food.spawnTick = 50;
+        food.reset();
+        assert.strictEqual(food.position, null);
+        assert.strictEqual(food.spawnTick, null);
+    });
+});
+
+// =============================================================================
+// GAME FOOD INTEGRATION TESTS
+// =============================================================================
+
+describe('Game Food Integration', () => {
+    let canvas;
+    let game;
+
+    beforeEach(() => {
+        canvas = createMockCanvas();
+        game = new Game(canvas);
+    });
+
+    test('Game has food instance', () => {
+        assert.ok(game.food instanceof Food);
+    });
+
+    test('Game initializes score to 0', () => {
+        assert.strictEqual(game.score, 0);
+    });
+
+    test('Game initializes tickCount to 0', () => {
+        assert.strictEqual(game.tickCount, 0);
+    });
+
+    test('tick spawns food if none exists', () => {
+        game.setState(GameState.PLAYING);
+        assert.strictEqual(game.food.position, null);
+        game.tick();
+        assert.notStrictEqual(game.food.position, null);
+    });
+
+    test('eating food increments score', () => {
+        game.setState(GameState.PLAYING);
+        game.tick(); // Spawn food
+        // Manually place food at snake's next head position
+        const head = game.snake.getHead();
+        game.food.position = { x: head.x + 1, y: head.y };
+        game.food.spawnTick = game.tickCount;
+
+        game.tick(); // Snake moves and eats food
+        assert.strictEqual(game.score, FOOD_POINTS);
+    });
+
+    test('eating food grows snake', () => {
+        game.setState(GameState.PLAYING);
+        const initialLength = game.snake.body.length;
+        game.tick(); // Spawn food
+
+        // Place food at snake's next head position
+        const head = game.snake.getHead();
+        game.food.position = { x: head.x + 1, y: head.y };
+        game.food.spawnTick = game.tickCount;
+
+        game.tick(); // Eat food
+        game.tick(); // Growth takes effect
+        assert.strictEqual(game.snake.body.length, initialLength + 1);
+    });
+
+    test('eating food respawns food', () => {
+        game.setState(GameState.PLAYING);
+        game.tick(); // Spawn food
+
+        // Place food at snake's next head position
+        const head = game.snake.getHead();
+        game.food.position = { x: head.x + 1, y: head.y };
+        game.food.spawnTick = game.tickCount;
+        const oldPosition = { ...game.food.position };
+
+        game.tick(); // Eat food
+        // Food should have new position (not null, and likely different)
+        assert.notStrictEqual(game.food.position, null);
+    });
+
+    test('reset clears score', () => {
+        game.score = 100;
+        game.reset();
+        assert.strictEqual(game.score, 0);
+    });
+
+    test('reset clears tickCount', () => {
+        game.tickCount = 50;
+        game.reset();
+        assert.strictEqual(game.tickCount, 0);
+    });
+
+    test('reset clears food', () => {
+        game.food.position = { x: 5, y: 5 };
+        game.food.spawnTick = 10;
+        game.reset();
+        assert.strictEqual(game.food.position, null);
+        assert.strictEqual(game.food.spawnTick, null);
+    });
+
+    test('food respawns when expired', () => {
+        game.setState(GameState.PLAYING);
+        game.tick(); // Spawn food at tickCount=1
+
+        const oldSpawnTick = game.food.spawnTick;
+        // Advance tickCount past decay time
+        game.tickCount = oldSpawnTick + FOOD_DECAY_TICKS - 1;
+        game.tick(); // Should trigger respawn
+
+        // New spawnTick should be updated
+        assert.notStrictEqual(game.food.spawnTick, oldSpawnTick);
+    });
+
+    test('tickCount increments each tick', () => {
+        game.setState(GameState.PLAYING);
+        game.tick();
+        assert.strictEqual(game.tickCount, 1);
+        game.tick();
+        assert.strictEqual(game.tickCount, 2);
+        game.tick();
+        assert.strictEqual(game.tickCount, 3);
+    });
+
+    test('score visible during GAMEOVER state', () => {
+        game.score = 100;
+        game.setState(GameState.GAMEOVER);
+        canvas._ctx.fillText.mock.resetCalls();
+        game.render();
+        // drawScore calls fillText twice (shadow + text)
+        assert.ok(canvas._ctx.fillText.mock.calls.length >= 2);
+    });
+
+    test('food not drawn during GAMEOVER state', () => {
+        game.food.position = { x: 5, y: 5 };
+        game.food.spawnTick = 0;
+        game.setState(GameState.GAMEOVER);
+        canvas._ctx.bezierCurveTo.mock.resetCalls();
+        game.render();
+        // Food uses bezierCurveTo for apple shape, snake does not
+        // No bezierCurveTo calls means food was not drawn
+        assert.strictEqual(canvas._ctx.bezierCurveTo.mock.calls.length, 0);
+    });
+});
+
+// =============================================================================
+// RENDERER FOOD TESTS
+// =============================================================================
+
+describe('Renderer Food Drawing', () => {
+    let canvas;
+    let renderer;
+
+    beforeEach(() => {
+        canvas = createMockCanvas();
+        renderer = new Renderer(canvas);
+    });
+
+    test('drawFood draws apple shape for food', () => {
+        const food = new Food(20, 20);
+        food.position = { x: 5, y: 5 };
+        food.spawnTick = 0;
+        renderer.drawFood(food, false, 0);
+        // Apple body uses bezierCurveTo (2 calls for left and right curves)
+        assert.strictEqual(canvas._ctx.bezierCurveTo.mock.calls.length, 2);
+        // Leaf uses ellipse
+        assert.strictEqual(canvas._ctx.ellipse.mock.calls.length, 1);
+    });
+
+    test('drawFood skips drawing when position is null', () => {
+        const food = new Food(20, 20);
+        renderer.drawFood(food, false, 0);
+        assert.strictEqual(canvas._ctx.arc.mock.calls.length, 0);
+    });
+
+    test('drawFood blinks when decay warning (hidden on odd intervals)', () => {
+        const food = new Food(20, 20);
+        food.position = { x: 5, y: 5 };
+        food.spawnTick = 0;
+        // tick 5: floor(5/5) = 1, 1 % 2 = 1 -> hidden
+        renderer.drawFood(food, true, 5);
+        assert.strictEqual(canvas._ctx.bezierCurveTo.mock.calls.length, 0);
+    });
+
+    test('drawFood visible when decay warning (visible on even intervals)', () => {
+        const food = new Food(20, 20);
+        food.position = { x: 5, y: 5 };
+        food.spawnTick = 0;
+        // tick 10: floor(10/5) = 2, 2 % 2 = 0 -> visible
+        renderer.drawFood(food, true, 10);
+        assert.strictEqual(canvas._ctx.bezierCurveTo.mock.calls.length, 2);
+    });
+
+    test('drawScore draws text', () => {
+        renderer.drawScore(100, 5);
+        // Should draw shadow and main text
+        assert.strictEqual(canvas._ctx.fillText.mock.calls.length, 2);
+    });
+
+    test('drawScore sets correct text properties', () => {
+        renderer.drawScore(50, 3);
+        assert.strictEqual(canvas._ctx.font, '14px monospace');
+        assert.strictEqual(canvas._ctx.textAlign, 'left');
+        assert.strictEqual(canvas._ctx.textBaseline, 'top');
+    });
+});
+
+// =============================================================================
+// FOOD CONSTANTS TESTS
+// =============================================================================
+
+describe('Food Constants', () => {
+    test('FOOD_POINTS is defined', () => {
+        assert.strictEqual(typeof FOOD_POINTS, 'number');
+        assert.strictEqual(FOOD_POINTS, 10);
+    });
+
+    test('FOOD_DECAY_TICKS is defined', () => {
+        assert.strictEqual(typeof FOOD_DECAY_TICKS, 'number');
+        assert.strictEqual(FOOD_DECAY_TICKS, 100);
+    });
+
+    test('FOOD_MAX_SPAWN_ATTEMPTS is defined', () => {
+        assert.strictEqual(typeof FOOD_MAX_SPAWN_ATTEMPTS, 'number');
+        assert.strictEqual(FOOD_MAX_SPAWN_ATTEMPTS, 100);
     });
 });
