@@ -56,7 +56,7 @@ The system SHALL prevent the snake from reversing 180° into itself.
 - **WHEN** the player inputs up or down direction
 - **THEN** the input is accepted and queued
 
-#### Scenario: Same direction accepted
+#### Scenario: Same direction rejected
 - **GIVEN** the snake is moving right
 - **WHEN** the player inputs right direction
-- **THEN** the input is accepted (no-op but valid)
+- **THEN** the input is rejected to prevent key repeat from clogging the queue

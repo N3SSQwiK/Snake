@@ -449,6 +449,11 @@ class InputHandler {
             return; // Reject reversal
         }
 
+        // Reject duplicate directions (prevents key repeat from clogging queue)
+        if (referenceDirection === newDirection) {
+            return;
+        }
+
         this.directionQueue.push(newDirection);
     }
 

@@ -561,9 +561,16 @@ describe('InputHandler', () => {
         assert.strictEqual(inputHandler.directionQueue.length, 1);
     });
 
-    test('queueDirection accepts same direction', () => {
+    test('queueDirection rejects duplicate direction (prevents key repeat clog)', () => {
         currentDirection = Direction.RIGHT;
         inputHandler.queueDirection(Direction.RIGHT);
+        assert.strictEqual(inputHandler.directionQueue.length, 0);
+    });
+
+    test('queueDirection rejects duplicate in queue', () => {
+        currentDirection = Direction.RIGHT;
+        inputHandler.queueDirection(Direction.UP);    // Queue: [UP]
+        inputHandler.queueDirection(Direction.UP);    // Should be rejected (same as last queued)
         assert.strictEqual(inputHandler.directionQueue.length, 1);
     });
 
