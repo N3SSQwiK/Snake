@@ -26,9 +26,9 @@
 
 ## 5. Minimal Settings UI
 > **Deferred** to `add-ui-screens` proposal (avoids W key conflict and throwaway code)
-- [ ] 5.1 Add temporary toggle mechanism (keyboard shortcut or simple button)
-- [ ] 5.2 Save preference when changed
-- [ ] 5.3 Display current mode indicator
+- [x] 5.1 ~Add temporary toggle mechanism~ → Deferred to add-ui-screens (#25)
+- [x] 5.2 ~Save preference when changed~ → Deferred to add-ui-screens (#25)
+- [x] 5.3 ~Display current mode indicator~ → Deferred to add-ui-screens (#25)
 
 Dev console workaround available: `game.setWallCollision(false)`
 
