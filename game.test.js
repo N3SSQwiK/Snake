@@ -807,6 +807,26 @@ describe('Food', () => {
         assert.strictEqual(result, false);
     });
 
+    test('spawn clears food state when grid is full', () => {
+        const food = new Food(2, 2);
+        // Set initial food position
+        food.position = { x: 0, y: 0 };
+        food.spawnTick = 10;
+
+        // Try to spawn on full grid
+        const excludePositions = [
+            { x: 0, y: 0 },
+            { x: 1, y: 0 },
+            { x: 0, y: 1 },
+            { x: 1, y: 1 }
+        ];
+        food.spawn(excludePositions, 20);
+
+        // Food state should be cleared to prevent stale collection
+        assert.strictEqual(food.position, null);
+        assert.strictEqual(food.spawnTick, null);
+    });
+
     test('spawn uses fallback when random attempts fail', () => {
         const food = new Food(3, 3);
         // Exclude all but one position - forces fallback

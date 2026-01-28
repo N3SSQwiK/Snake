@@ -185,6 +185,9 @@ class Food {
         }
 
         // No valid position available (grid is full)
+        // Clear food state to prevent stale food from being collected
+        this.position = null;
+        this.spawnTick = null;
         return false;
     }
 
