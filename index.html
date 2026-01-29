@@ -40,11 +40,44 @@
             <!-- Game Over Screen -->
             <div class="screen-gameover" role="dialog" aria-label="Game over">
                 <div class="ui-panel">
-                    <h2 class="ui-heading">Game Over</h2>
+                    <h2 class="ui-heading" id="gameover-heading">Game Over</h2>
                     <p class="ui-score" id="final-score">0</p>
+                    <p class="ui-label" id="best-score"></p>
+                    <p class="ui-label" id="leaderboard-status"></p>
                     <div class="ui-btn-group">
                         <button class="ui-btn ui-btn--primary" data-action="restart">Restart</button>
+                        <button class="ui-btn ui-btn--ghost" data-action="highscores">View Leaderboard</button>
                         <button class="ui-btn ui-btn--ghost" data-action="menu">Menu</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Initials Entry (modal overlay) -->
+            <div class="screen-initials" role="dialog" aria-label="Enter initials">
+                <div class="ui-panel">
+                    <h2 class="ui-heading">New High Score!</h2>
+                    <p class="ui-score" id="initials-score">0</p>
+                    <div class="initials-slots">
+                        <div class="initials-slot initials-slot--active" data-index="0">A</div>
+                        <div class="initials-slot" data-index="1">A</div>
+                        <div class="initials-slot" data-index="2">A</div>
+                        <input id="initials-mobile-input" type="text" autocomplete="off" autocapitalize="characters" maxlength="1" aria-label="Type letter" />
+                    </div>
+                    <p class="ui-label">Type or tap slots to enter, arrows to cycle</p>
+                    <div class="ui-btn-group">
+                        <button class="ui-btn ui-btn--primary" data-action="submit-initials">Submit</button>
+                        <button class="ui-btn ui-btn--ghost" data-action="skip-initials">Skip</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Leaderboard (modal overlay) -->
+            <div class="screen-leaderboard" role="dialog" aria-label="High scores">
+                <div class="ui-panel ui-panel--wide">
+                    <h2 class="ui-heading">High Scores</h2>
+                    <div class="leaderboard-table" id="leaderboard-body" aria-live="polite" aria-atomic="true"></div>
+                    <div class="ui-btn-group">
+                        <button class="ui-btn ui-btn--ghost" data-action="leaderboard-back">Back</button>
                     </div>
                 </div>
             </div>

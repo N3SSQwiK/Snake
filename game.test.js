@@ -1258,6 +1258,162 @@ describe('StorageManager', () => {
 });
 
 // =============================================================================
+// LEADERBOARD STORAGE TESTS
+// =============================================================================
+
+describe('StorageManager Leaderboard', () => {
+    let storage;
+
+    beforeEach(() => {
+        global.localStorage.clear();
+        storage = new StorageManager();
+    });
+
+    test('getLeaderboard returns empty array by default', () => {
+        assert.deepStrictEqual(storage.getLeaderboard(), []);
+    });
+
+    test('addScore adds entry to leaderboard', () => {
+        storage.addScore('ACE', 100);
+        const board = storage.getLeaderboard();
+        assert.strictEqual(board.length, 1);
+        assert.strictEqual(board[0].initials, 'ACE');
+        assert.strictEqual(board[0].score, 100);
+        assert.strictEqual(typeof board[0].timestamp, 'number');
+    });
+
+    test('addScore uppercases initials', () => {
+        storage.addScore('abc', 50);
+        assert.strictEqual(storage.getLeaderboard()[0].initials, 'ABC');
+    });
+
+    test('addScore truncates initials to 3 characters', () => {
+        storage.addScore('ABCD', 50);
+        assert.strictEqual(storage.getLeaderboard()[0].initials, 'ABC');
+    });
+
+    test('leaderboard sorts by score descending', () => {
+        storage.addScore('AAA', 50);
+        storage.addScore('BBB', 200);
+        storage.addScore('CCC', 100);
+        const board = storage.getLeaderboard();
+        assert.strictEqual(board[0].score, 200);
+        assert.strictEqual(board[1].score, 100);
+        assert.strictEqual(board[2].score, 50);
+    });
+
+    test('leaderboard limits to 10 entries', () => {
+        for (let i = 0; i < 12; i++) {
+            storage.addScore('AAA', (i + 1) * 10);
+        }
+        const board = storage.getLeaderboard();
+        assert.strictEqual(board.length, 10);
+        assert.strictEqual(board[0].score, 120);
+        assert.strictEqual(board[9].score, 30);
+    });
+
+    test('ties broken by earlier timestamp first', () => {
+        // Directly set entries with same score but different timestamps (unsorted)
+        storage.set('leaderboard', [
+            { initials: 'NEW', score: 100, timestamp: 2000 },
+            { initials: 'OLD', score: 100, timestamp: 1000 }
+        ]);
+        // addScore re-sorts the full array
+        storage.addScore('MID', 100);
+        const board = storage.getLeaderboard();
+        // All score=100; sorted by timestamp ASC: OLD(1000), NEW(2000), MID(recent)
+        assert.strictEqual(board[0].initials, 'OLD');
+        assert.strictEqual(board[1].initials, 'NEW');
+        assert.strictEqual(board[2].initials, 'MID');
+    });
+
+    test('isHighScore returns true when board has fewer than 10 entries', () => {
+        assert.strictEqual(storage.isHighScore(1), true);
+    });
+
+    test('isHighScore returns true when score beats lowest', () => {
+        for (let i = 0; i < 10; i++) {
+            storage.addScore('AAA', (i + 1) * 10);
+        }
+        assert.strictEqual(storage.isHighScore(15), true);
+    });
+
+    test('isHighScore returns false when score does not beat lowest', () => {
+        for (let i = 0; i < 10; i++) {
+            storage.addScore('AAA', (i + 1) * 10);
+        }
+        assert.strictEqual(storage.isHighScore(5), false);
+    });
+
+    test('isNewTopScore returns true on empty board', () => {
+        assert.strictEqual(storage.isNewTopScore(1), true);
+    });
+
+    test('isNewTopScore returns true when score beats #1', () => {
+        storage.addScore('AAA', 100);
+        assert.strictEqual(storage.isNewTopScore(101), true);
+    });
+
+    test('isNewTopScore returns false when score does not beat #1', () => {
+        storage.addScore('AAA', 100);
+        assert.strictEqual(storage.isNewTopScore(99), false);
+    });
+
+    test('isNewTopScore returns false when score equals #1', () => {
+        storage.addScore('AAA', 100);
+        assert.strictEqual(storage.isNewTopScore(100), false);
+    });
+
+    test('formatLeaderboardDate returns formatted string', () => {
+        // Use a known timestamp: Jan 15, 2026
+        const ts = new Date(2026, 0, 15).getTime();
+        const result = storage.formatLeaderboardDate(ts);
+        assert.ok(result.includes('15'), `Expected "15" in "${result}"`);
+        assert.ok(result.includes('Jan'), `Expected "Jan" in "${result}"`);
+    });
+
+    test('formatLeaderboardDate handles invalid input gracefully', () => {
+        assert.strictEqual(storage.formatLeaderboardDate(undefined), '');
+    });
+
+    test('leaderboard persists across StorageManager instances', () => {
+        storage.addScore('ACE', 100);
+        const storage2 = new StorageManager();
+        const board = storage2.getLeaderboard();
+        assert.strictEqual(board.length, 1);
+        assert.strictEqual(board[0].initials, 'ACE');
+    });
+});
+
+// =============================================================================
+// HANDLE GAME OVER TESTS
+// =============================================================================
+
+describe('Game.handleGameOver', () => {
+    let canvas;
+    let game;
+
+    beforeEach(() => {
+        canvas = createMockCanvas();
+        global.localStorage.clear();
+        game = new Game(canvas);
+    });
+
+    test('handleGameOver sets state to GAMEOVER', () => {
+        game.state = GameState.PLAYING;
+        game.handleGameOver();
+        assert.strictEqual(game.state, GameState.GAMEOVER);
+    });
+
+    test('handleGameOver re-entry guard prevents double transition', () => {
+        game.state = GameState.GAMEOVER;
+        // Should not throw or change state
+        game.handleGameOver();
+        assert.strictEqual(game.state, GameState.GAMEOVER);
+    });
+});
+
+// =============================================================================
 // WALL COLLISION TESTS
 // =============================================================================
 
