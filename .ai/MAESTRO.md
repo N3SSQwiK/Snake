@@ -15,13 +15,13 @@ Implement the `add-ui-screens` proposal — start menu, pause overlay, game over
 ## Tasks
 | ID | Description | Status | Specialist | Tool | Depends |
 |----|-------------|--------|------------|------|---------|
-| 1 | Design UI screens with /game-ui-design skill (output: CSS values, class naming convention, color palette, spacing) | pending | code | Claude Code | - |
-| 2 | Add HTML screen markup inside #overlay + all CSS (screens as children of #overlay, data-attribute selectors, @media pointer:coarse for mobile pause, fade-in animation) | pending | code | Claude Code | 1 |
-| 3 | Implement UIManager in game.js (DOM caching, set data-state on .game-container, set data-ui for settings modal, event delegation on #overlay, score display update, previousState tracking) | pending | code | Claude Code | 2 |
-| 4 | Extend InputHandler for action keys (spacebar pause only during PLAYING/PAUSED with event.repeat filter, Escape for menu) | pending | code | Claude Code | 3 |
-| 5 | Wire screen interactions: button handlers via delegation, settings toggle (immediate apply per proposal), state transitions, previousState for settings back-button | pending | code | Claude Code | 4 |
-| 6 | Remove temporary PLAYING override, game starts in MENU | pending | code | Claude Code | 5 |
-| 7 | Testing: full state transition matrix, settings persistence, mobile pause, edge cases | pending | test | Claude Code | 6 |
+| 1 | Design UI screens with /game-ui-design skill (output: CSS values, class naming convention, color palette, spacing) | complete | code | Claude Code | - |
+| 2 | Add HTML screen markup inside #overlay + all CSS (screens as children of #overlay, data-attribute selectors, @media pointer:coarse for mobile pause, fade-in animation) | complete | code | Claude Code | 1 |
+| 3 | Implement UIManager in game.js (DOM caching, set data-state on .game-container, set data-ui for settings modal, event delegation on #overlay, score display update, previousState tracking) | complete | code | Claude Code | 2 |
+| 4 | Extend InputHandler for action keys (spacebar pause only during PLAYING/PAUSED with event.repeat filter, Escape for menu) | complete | code | Claude Code | 3 |
+| 5 | Wire screen interactions: button handlers via delegation, settings toggle (immediate apply per proposal), state transitions, previousState for settings back-button | complete | code | Claude Code | 4 |
+| 6 | Remove temporary PLAYING override, game starts in MENU | complete | code | Claude Code | 5 |
+| 7 | Testing: full state transition matrix, settings persistence, mobile pause, edge cases | complete | test | Claude Code | 6 |
 
 ## Edge Case Handling
 - Spacebar: `event.repeat` filtering (no timer debounce) — blocks held-key auto-repeat without adding latency
@@ -41,7 +41,7 @@ Implement the `add-ui-screens` proposal — start menu, pause overlay, game over
 - [ ] Mobile pause button visible on pointer:coarse only
 - [ ] Held spacebar doesn't spam state changes (event.repeat filtered)
 - [ ] No console errors throughout
-- [ ] Unit tests pass (node --test game.test.js)
+- [x] Unit tests pass (node --test game.test.js) — 151/151 pass
 
 ## Parallelization
 - All tasks sequential

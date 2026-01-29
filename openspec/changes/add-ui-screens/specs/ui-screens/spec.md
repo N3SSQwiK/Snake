@@ -102,6 +102,11 @@ The system SHALL provide a settings screen as a modal overlay that does not chan
 - **WHEN** the player clicks back
 - **THEN** the previous screen is displayed
 
+#### Scenario: Keyboard actions blocked during settings
+- **GIVEN** the settings screen is displayed
+- **WHEN** the player presses spacebar or Escape
+- **THEN** the keypresses are ignored and game state does not change
+
 ### Requirement: Mobile Pause Button
 The system SHALL display a pause button on touch devices.
 

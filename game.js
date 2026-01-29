@@ -547,6 +547,9 @@ class InputHandler {
         this.directionQueue = [];
         this.maxQueueSize = 2;
 
+        // Action callbacks (spacebar, escape, etc.)
+        this.actionCallbacks = {};
+
         // Touch tracking
         this.touchStartX = null;
         this.touchStartY = null;
@@ -577,7 +580,25 @@ class InputHandler {
         this.canvas.removeEventListener('touchend', this.handleTouchEnd);
     }
 
+    onAction(actionName, callback) {
+        this.actionCallbacks[actionName] = callback;
+    }
+
     handleKeyDown(event) {
+        // Action keys (filter event.repeat to prevent held-key spam)
+        if (!event.repeat) {
+            if (event.key === ' ' && this.actionCallbacks.pause) {
+                event.preventDefault();
+                this.actionCallbacks.pause();
+                return;
+            }
+            if (event.key === 'Escape' && this.actionCallbacks.escape) {
+                event.preventDefault();
+                this.actionCallbacks.escape();
+                return;
+            }
+        }
+
         const keyMap = {
             'ArrowUp': Direction.UP,
             'ArrowDown': Direction.DOWN,
@@ -679,6 +700,102 @@ class InputHandler {
 }
 
 // =============================================================================
+// UI MANAGER CLASS
+// =============================================================================
+
+class UIManager {
+    constructor(container, overlay, game) {
+        this.container = container;
+        this.overlay = overlay;
+        this.game = game;
+        this.previousState = null;
+
+        // DOM cache
+        this.finalScoreEl = document.getElementById('final-score');
+        this.wallToggle = document.getElementById('wall-collision-toggle');
+
+        // Event delegation on overlay
+        this.handleOverlayClick = this.handleOverlayClick.bind(this);
+        this.overlay.addEventListener('click', this.handleOverlayClick);
+    }
+
+    updateState(newState) {
+        this.container.setAttribute('data-state', newState);
+
+        // Clear settings modal when state changes (unless we're opening settings)
+        if (!this._settingsOpen) {
+            this.container.removeAttribute('data-ui');
+        }
+        this._settingsOpen = false;
+    }
+
+    showSettings() {
+        this.previousState = this.game.state;
+        this._settingsOpen = true;
+
+        // Sync toggle with current value
+        this.wallToggle.setAttribute('aria-checked',
+            String(this.game.wallCollisionEnabled));
+
+        this.container.setAttribute('data-ui', 'settings');
+    }
+
+    hideSettings() {
+        this.container.removeAttribute('data-ui');
+    }
+
+    updateScore(score) {
+        this.finalScoreEl.textContent = score;
+    }
+
+    handleOverlayClick(event) {
+        const action = event.target.closest('[data-action]');
+        if (!action) return;
+
+        switch (action.dataset.action) {
+            case 'play':
+                this.game.reset();
+                this.game.setState(GameState.PLAYING);
+                break;
+            case 'settings':
+                this.showSettings();
+                break;
+            case 'highscores':
+                // Placeholder — leaderboard feature not yet implemented
+                break;
+            case 'resume':
+                this.game.setState(GameState.PLAYING);
+                break;
+            case 'quit':
+                this.game.reset();
+                this.game.setState(GameState.MENU);
+                break;
+            case 'restart':
+                this.game.reset();
+                this.game.setState(GameState.PLAYING);
+                break;
+            case 'menu':
+                this.game.reset();
+                this.game.setState(GameState.MENU);
+                break;
+            case 'toggle-wall-collision': {
+                const newVal = !this.game.wallCollisionEnabled;
+                this.game.setWallCollision(newVal);
+                this.wallToggle.setAttribute('aria-checked', String(newVal));
+                break;
+            }
+            case 'settings-back':
+                this.hideSettings();
+                break;
+        }
+    }
+
+    destroy() {
+        this.overlay.removeEventListener('click', this.handleOverlayClick);
+    }
+}
+
+// =============================================================================
 // GAME CLASS
 // =============================================================================
 
@@ -736,8 +853,12 @@ class Game {
     }
 
     onStateChange(oldState, newState) {
-        // Hook for state change side effects
-        console.log(`State changed: ${oldState} -> ${newState}`);
+        if (this.ui) {
+            this.ui.updateState(newState);
+            if (newState === GameState.GAMEOVER) {
+                this.ui.updateScore(this.score);
+            }
+        }
     }
 
     checkWallCollision(head) {
@@ -910,15 +1031,42 @@ if (typeof document !== 'undefined') {
 
         const game = new Game(canvas);
 
-        // Start the game loop
+        // Initialize UI manager
+        const container = document.querySelector('.game-container');
+        const overlay = document.getElementById('overlay');
+        game.ui = new UIManager(container, overlay, game);
+
+        // Wire action keys (blocked while settings modal is open)
+        game.inputHandler.onAction('pause', () => {
+            if (container.hasAttribute('data-ui')) return;
+            if (game.state === GameState.PLAYING) {
+                game.setState(GameState.PAUSED);
+            } else if (game.state === GameState.PAUSED) {
+                game.setState(GameState.PLAYING);
+            }
+        });
+
+        game.inputHandler.onAction('escape', () => {
+            if (container.hasAttribute('data-ui')) return;
+            if (game.state === GameState.PLAYING || game.state === GameState.PAUSED) {
+                game.reset();
+                game.setState(GameState.MENU);
+            }
+        });
+
+        // Wire mobile pause button
+        const mobilePauseBtn = document.querySelector('.mobile-pause-btn');
+        if (mobilePauseBtn) {
+            mobilePauseBtn.addEventListener('click', () => {
+                if (game.state === GameState.PLAYING) {
+                    game.setState(GameState.PAUSED);
+                }
+            });
+        }
+
+        // Start the game loop and show menu
         game.start();
-
-        // Set initial state to MENU
         game.setState(GameState.MENU);
-
-        // Temporary: Start playing immediately for testing
-        // Remove this once UI screens are implemented
-        game.setState(GameState.PLAYING);
 
         // Expose game instance for debugging
         window.game = game;
@@ -931,7 +1079,7 @@ if (typeof document !== 'undefined') {
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
-        Game, Renderer, Snake, Food, InputHandler, StorageManager,
+        Game, Renderer, Snake, Food, InputHandler, StorageManager, UIManager,
         GameState, Direction,
         GRID_WIDTH, GRID_HEIGHT, CELL_SIZE,
         FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_MAX_SPAWN_ATTEMPTS
