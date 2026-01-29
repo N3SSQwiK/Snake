@@ -40,6 +40,11 @@ The system SHALL prompt players to enter 3-character initials when their score q
 - **WHEN** the player confirms their initials
 - **THEN** the score is saved to the leaderboard with the entered initials
 
+#### Scenario: Entry dismissal
+- **GIVEN** the initials entry screen is displayed
+- **WHEN** the player presses Escape
+- **THEN** initials entry is skipped and the game over screen is shown without saving the score
+
 ### Requirement: Leaderboard Display
 The system SHALL display the leaderboard in a dedicated screen accessible from the start menu.
 

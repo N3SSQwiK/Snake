@@ -430,12 +430,21 @@ body {
     border: 1px solid var(--ui-glass-border);
     border-radius: 8px;
     transition: all 0.15s var(--ease-out-quad);
+    cursor: pointer;
 }
 
 .initials-slot--active {
     color: var(--ui-accent);
     border-color: var(--ui-accent);
     box-shadow: 0 0 0 3px var(--ui-accent-glow);
+}
+
+#initials-mobile-input {
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+    pointer-events: none;
 }
 
 /* =============================================================================
@@ -515,7 +524,7 @@ body {
 
 .new-high-score {
     color: var(--ui-gold);
-    animation: celebratePulse 1.5s var(--ease-out-quad) 2;
+    animation: celebratePulse 1.5s var(--ease-out-quad) infinite;
 }
 
 @keyframes celebratePulse {

@@ -756,8 +756,10 @@ class UIManager {
         this.finalScoreEl = document.getElementById('final-score');
         this.gameoverHeading = document.getElementById('gameover-heading');
         this.bestScoreEl = document.getElementById('best-score');
+        this.leaderboardStatusEl = document.getElementById('leaderboard-status');
         this.initialsScoreEl = document.getElementById('initials-score');
         this.initialsSlots = container.querySelectorAll('.initials-slot');
+        this.initialsMobileInput = document.getElementById('initials-mobile-input');
         this.leaderboardBody = document.getElementById('leaderboard-body');
         this.wallToggle = document.getElementById('wall-collision-toggle');
 
@@ -806,14 +808,10 @@ class UIManager {
             this.bestScoreEl.textContent = '';
         }
 
-        // Celebration for new #1
-        if (this.game.storage.isNewTopScore(score) && score > 0) {
-            this.gameoverHeading.textContent = 'New High Score!';
-            this.gameoverHeading.classList.add('new-high-score');
-        } else {
-            this.gameoverHeading.textContent = 'Game Over';
-            this.gameoverHeading.classList.remove('new-high-score');
-        }
+        // Reset celebration and status (applied after initials submit)
+        this.gameoverHeading.textContent = 'Game Over';
+        this.gameoverHeading.classList.remove('new-high-score');
+        this.leaderboardStatusEl.textContent = '';
     }
 
     showInitials(score, storage) {
@@ -829,6 +827,29 @@ class UIManager {
 
         this._initialsKeyHandler = (e) => this._handleInitialsKey(e);
         document.addEventListener('keydown', this._initialsKeyHandler);
+
+        // Mobile keyboard support: focus hidden input on slot tap
+        if (this.initialsMobileInput) {
+            this._initialsMobileInputHandler = (e) => {
+                const val = e.target.value;
+                if (val && /^[a-zA-Z]$/.test(val)) {
+                    this._initialsChars[this._initialsIndex] = val.toUpperCase().charCodeAt(0) - 65;
+                    if (this._initialsIndex < 2) {
+                        this._initialsIndex++;
+                    }
+                    this._renderInitialsSlots();
+                }
+                e.target.value = '';
+            };
+            this._initialsSlotTapHandler = () => {
+                this.initialsMobileInput.focus();
+            };
+            this.initialsMobileInput.addEventListener('input', this._initialsMobileInputHandler);
+            this.initialsSlots.forEach(slot => {
+                slot.addEventListener('click', this._initialsSlotTapHandler);
+            });
+            this.initialsMobileInput.value = '';
+        }
     }
 
     hideInitials() {
@@ -836,6 +857,17 @@ class UIManager {
         if (this._initialsKeyHandler) {
             document.removeEventListener('keydown', this._initialsKeyHandler);
             this._initialsKeyHandler = null;
+        }
+        if (this.initialsMobileInput && this._initialsMobileInputHandler) {
+            this.initialsMobileInput.removeEventListener('input', this._initialsMobileInputHandler);
+            this._initialsMobileInputHandler = null;
+            this.initialsMobileInput.blur();
+        }
+        if (this._initialsSlotTapHandler) {
+            this.initialsSlots.forEach(slot => {
+                slot.removeEventListener('click', this._initialsSlotTapHandler);
+            });
+            this._initialsSlotTapHandler = null;
         }
     }
 
@@ -886,11 +918,16 @@ class UIManager {
         this.hideInitials();
         // Refresh game-over screen with updated best score
         this.updateScore(this._initialsScore);
-        // Preserve celebration state after score is saved
+
+        // Apply celebration/status now that game over screen is visible
         if (wasTopScore) {
             this.gameoverHeading.textContent = 'New High Score!';
+            // Force animation restart by triggering reflow
+            this.gameoverHeading.classList.remove('new-high-score');
+            void this.gameoverHeading.offsetWidth;
             this.gameoverHeading.classList.add('new-high-score');
         }
+        this.leaderboardStatusEl.textContent = 'You made the leaderboard!';
     }
 
     showLeaderboard() {

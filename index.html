@@ -43,6 +43,7 @@
                     <h2 class="ui-heading" id="gameover-heading">Game Over</h2>
                     <p class="ui-score" id="final-score">0</p>
                     <p class="ui-label" id="best-score"></p>
+                    <p class="ui-label" id="leaderboard-status"></p>
                     <div class="ui-btn-group">
                         <button class="ui-btn ui-btn--primary" data-action="restart">Restart</button>
                         <button class="ui-btn ui-btn--ghost" data-action="highscores">View Leaderboard</button>
@@ -60,8 +61,9 @@
                         <div class="initials-slot initials-slot--active" data-index="0">A</div>
                         <div class="initials-slot" data-index="1">A</div>
                         <div class="initials-slot" data-index="2">A</div>
+                        <input id="initials-mobile-input" type="text" autocomplete="off" autocapitalize="characters" maxlength="1" aria-label="Type letter" />
                     </div>
-                    <p class="ui-label">Arrow keys to change, Enter to confirm</p>
+                    <p class="ui-label">Type or tap slots to enter, arrows to cycle</p>
                     <div class="ui-btn-group">
                         <button class="ui-btn ui-btn--primary" data-action="submit-initials">Submit</button>
                         <button class="ui-btn ui-btn--ghost" data-action="skip-initials">Skip</button>
