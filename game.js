@@ -82,6 +82,42 @@ class StorageManager {
             // Ignore errors
         }
     }
+
+    getLeaderboard() {
+        return this.get('leaderboard', []);
+    }
+
+    addScore(initials, score) {
+        const sanitized = String(initials).toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) || 'AAA';
+        const validScore = typeof score === 'number' && score >= 0 ? Math.floor(score) : 0;
+        const entry = {
+            initials: sanitized,
+            score: validScore,
+            timestamp: Date.now()
+        };
+        const board = this.getLeaderboard();
+        board.push(entry);
+        board.sort((a, b) => b.score - a.score || a.timestamp - b.timestamp);
+        this.set('leaderboard', board.slice(0, 10));
+    }
+
+    isHighScore(score) {
+        const board = this.getLeaderboard();
+        return board.length < 10 || score > board[board.length - 1].score;
+    }
+
+    isNewTopScore(score) {
+        const board = this.getLeaderboard();
+        return board.length === 0 || score > board[0].score;
+    }
+
+    formatLeaderboardDate(timestamp) {
+        try {
+            return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(new Date(timestamp));
+        } catch {
+            return '';
+        }
+    }
 }
 
 // =============================================================================
@@ -588,10 +624,7 @@ class InputHandler {
     }
 
     handleKeyDown(event) {
-        // Block all input when gate is active (e.g., settings modal open)
-        if (this.inputGate && this.inputGate()) return;
-
-        // Action keys (filter event.repeat to prevent held-key spam)
+        // Action keys always processed (filter event.repeat to prevent held-key spam)
         if (!event.repeat) {
             if (event.key === ' ' && this.actionCallbacks.pause) {
                 event.preventDefault();
@@ -604,6 +637,9 @@ class InputHandler {
                 return;
             }
         }
+
+        // Block direction input when gate is active (e.g., modal overlay open)
+        if (this.inputGate && this.inputGate()) return;
 
         const keyMap = {
             'ArrowUp': Direction.UP,
@@ -718,7 +754,19 @@ class UIManager {
 
         // DOM cache
         this.finalScoreEl = document.getElementById('final-score');
+        this.gameoverHeading = document.getElementById('gameover-heading');
+        this.bestScoreEl = document.getElementById('best-score');
+        this.initialsScoreEl = document.getElementById('initials-score');
+        this.initialsSlots = container.querySelectorAll('.initials-slot');
+        this.leaderboardBody = document.getElementById('leaderboard-body');
         this.wallToggle = document.getElementById('wall-collision-toggle');
+
+        // Initials entry state
+        this._initialsChars = [0, 0, 0]; // A=0, B=1, ... Z=25
+        this._initialsIndex = 0;
+        this._initialsScore = 0;
+        this._initialsStorage = null;
+        this._initialsKeyHandler = null;
 
         // Sync toggle with stored value on init (HTML hardcodes true)
         this.wallToggle.setAttribute('aria-checked',
@@ -749,6 +797,148 @@ class UIManager {
 
     updateScore(score) {
         this.finalScoreEl.textContent = score;
+
+        // Update best score label
+        const board = this.game.storage.getLeaderboard();
+        if (board.length > 0) {
+            this.bestScoreEl.textContent = `Best: ${board[0].score}`;
+        } else {
+            this.bestScoreEl.textContent = '';
+        }
+
+        // Celebration for new #1
+        if (this.game.storage.isNewTopScore(score) && score > 0) {
+            this.gameoverHeading.textContent = 'New High Score!';
+            this.gameoverHeading.classList.add('new-high-score');
+        } else {
+            this.gameoverHeading.textContent = 'Game Over';
+            this.gameoverHeading.classList.remove('new-high-score');
+        }
+    }
+
+    showInitials(score, storage) {
+        this._initialsScore = score;
+        this._initialsStorage = storage;
+        this._initialsChars = [0, 0, 0];
+        this._initialsIndex = 0;
+
+        this.initialsScoreEl.textContent = score;
+        this._renderInitialsSlots();
+
+        this.container.setAttribute('data-ui', 'initials');
+
+        this._initialsKeyHandler = (e) => this._handleInitialsKey(e);
+        document.addEventListener('keydown', this._initialsKeyHandler);
+    }
+
+    hideInitials() {
+        this.container.removeAttribute('data-ui');
+        if (this._initialsKeyHandler) {
+            document.removeEventListener('keydown', this._initialsKeyHandler);
+            this._initialsKeyHandler = null;
+        }
+    }
+
+    _renderInitialsSlots() {
+        this.initialsSlots.forEach((slot, i) => {
+            slot.textContent = String.fromCharCode(65 + this._initialsChars[i]);
+            slot.classList.toggle('initials-slot--active', i === this._initialsIndex);
+        });
+    }
+
+    _handleInitialsKey(e) {
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            return;
+        }
+        e.preventDefault();
+        const key = e.key;
+
+        if (key === 'ArrowUp') {
+            this._initialsChars[this._initialsIndex] = (this._initialsChars[this._initialsIndex] + 1) % 26;
+            this._renderInitialsSlots();
+        } else if (key === 'ArrowDown') {
+            this._initialsChars[this._initialsIndex] = (this._initialsChars[this._initialsIndex] + 25) % 26;
+            this._renderInitialsSlots();
+        } else if (key === 'ArrowRight') {
+            this._initialsIndex = Math.min(this._initialsIndex + 1, 2);
+            this._renderInitialsSlots();
+        } else if (key === 'ArrowLeft') {
+            this._initialsIndex = Math.max(this._initialsIndex - 1, 0);
+            this._renderInitialsSlots();
+        } else if (key === 'Enter') {
+            this._submitInitials();
+        } else if (key === 'Escape') {
+            this.hideInitials();
+        } else if (/^[a-zA-Z]$/.test(key)) {
+            this._initialsChars[this._initialsIndex] = key.toUpperCase().charCodeAt(0) - 65;
+            if (this._initialsIndex < 2) {
+                this._initialsIndex++;
+            }
+            this._renderInitialsSlots();
+        }
+    }
+
+    _submitInitials() {
+        const initials = this._initialsChars.map(c => String.fromCharCode(65 + c)).join('');
+        const wasTopScore = this._initialsStorage.isNewTopScore(this._initialsScore);
+        this._initialsStorage.addScore(initials, this._initialsScore);
+        this.hideInitials();
+        // Refresh game-over screen with updated best score
+        this.updateScore(this._initialsScore);
+        // Preserve celebration state after score is saved
+        if (wasTopScore) {
+            this.gameoverHeading.textContent = 'New High Score!';
+            this.gameoverHeading.classList.add('new-high-score');
+        }
+    }
+
+    showLeaderboard() {
+        const board = this.game.storage.getLeaderboard();
+        this.leaderboardBody.replaceChildren();
+
+        if (board.length === 0) {
+            const empty = document.createElement('p');
+            empty.className = 'leaderboard-empty';
+            empty.textContent = 'No scores yet. Play to set the first record!';
+            this.leaderboardBody.appendChild(empty);
+        } else {
+            board.forEach((entry, i) => {
+                const row = document.createElement('div');
+                row.className = 'leaderboard-row';
+
+                const rankSpan = document.createElement('span');
+                rankSpan.className = 'leaderboard-rank';
+                rankSpan.textContent = i + 1;
+                const initialsSpan = document.createElement('span');
+                initialsSpan.className = 'leaderboard-initials';
+                initialsSpan.textContent = entry.initials;
+                const scoreSpan = document.createElement('span');
+                scoreSpan.className = 'leaderboard-score';
+                scoreSpan.textContent = entry.score;
+                const dateSpan = document.createElement('span');
+                dateSpan.className = 'leaderboard-date';
+                dateSpan.textContent = this.game.storage.formatLeaderboardDate(entry.timestamp);
+
+                row.appendChild(rankSpan);
+                row.appendChild(initialsSpan);
+                row.appendChild(scoreSpan);
+                row.appendChild(dateSpan);
+                this.leaderboardBody.appendChild(row);
+            });
+        }
+
+        this._leaderboardPrevUi = this.container.getAttribute('data-ui');
+        this.container.setAttribute('data-ui', 'leaderboard');
+    }
+
+    hideLeaderboard() {
+        if (this._leaderboardPrevUi) {
+            this.container.setAttribute('data-ui', this._leaderboardPrevUi);
+        } else {
+            this.container.removeAttribute('data-ui');
+        }
+        this._leaderboardPrevUi = null;
     }
 
     handleOverlayClick(event) {
@@ -764,7 +954,7 @@ class UIManager {
                 this.showSettings();
                 break;
             case 'highscores':
-                // Placeholder — leaderboard feature not yet implemented
+                this.showLeaderboard();
                 break;
             case 'resume':
                 this.game.setState(GameState.PLAYING);
@@ -789,6 +979,15 @@ class UIManager {
             }
             case 'settings-back':
                 this.hideSettings();
+                break;
+            case 'submit-initials':
+                this._submitInitials();
+                break;
+            case 'skip-initials':
+                this.hideInitials();
+                break;
+            case 'leaderboard-back':
+                this.hideLeaderboard();
                 break;
         }
     }
@@ -861,6 +1060,16 @@ class Game {
             if (newState === GameState.GAMEOVER) {
                 this.ui.updateScore(this.score);
             }
+        }
+    }
+
+    handleGameOver() {
+        if (this.state === GameState.GAMEOVER) {
+            return; // Re-entry guard
+        }
+        this.setState(GameState.GAMEOVER);
+        if (this.ui && this.score > 0 && this.storage.isHighScore(this.score)) {
+            this.ui.showInitials(this.score, this.storage);
         }
     }
 
@@ -948,13 +1157,13 @@ class Game {
 
         // Check wall collision (only if enabled)
         if (this.wallCollisionEnabled && this.checkWallCollision(head)) {
-            this.setState(GameState.GAMEOVER);
+            this.handleGameOver();
             return;
         }
 
         // Check self-collision (AFTER wrap is applied)
         if (this.snake.checkSelfCollision()) {
-            this.setState(GameState.GAMEOVER);
+            this.handleGameOver();
             return;
         }
 
@@ -1052,6 +1261,18 @@ if (typeof document !== 'undefined') {
         });
 
         game.inputHandler.onAction('escape', () => {
+            // Close modal overlays first
+            const activeUi = container.getAttribute('data-ui');
+            if (activeUi === 'leaderboard') {
+                game.ui.hideLeaderboard();
+                return;
+            }
+            if (activeUi === 'settings') {
+                game.ui.hideSettings();
+                return;
+            }
+            // Initials ESC is handled by its own keydown listener
+
             if (game.state === GameState.PLAYING || game.state === GameState.PAUSED || game.state === GameState.GAMEOVER) {
                 game.reset();
                 game.setState(GameState.MENU);
