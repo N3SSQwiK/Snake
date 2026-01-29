@@ -1271,7 +1271,9 @@ if (typeof document !== 'undefined') {
                 game.ui.hideSettings();
                 return;
             }
-            // Initials ESC is handled by its own keydown listener
+            if (activeUi === 'initials') {
+                return; // Handled by its own keydown listener
+            }
 
             if (game.state === GameState.PLAYING || game.state === GameState.PAUSED || game.state === GameState.GAMEOVER) {
                 game.reset();
