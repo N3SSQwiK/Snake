@@ -7,6 +7,7 @@
 
 /* Theme CSS Custom Properties (Classic theme defaults) */
 :root {
+    /* Canvas rendering colors (unchanged) */
     --theme-bg: #000000;
     --theme-grid: #1a3a1a;
     --theme-snake: #00ff00;
@@ -19,6 +20,23 @@
     --theme-button: #333333;
     --theme-button-hover: #444444;
     --theme-overlay-bg: rgba(0, 0, 0, 0.85);
+
+    /* UI design system */
+    --ui-accent: #10b981;
+    --ui-accent-glow: rgba(16, 185, 129, 0.35);
+    --ui-accent-hover: #34d399;
+    --ui-danger: #f43f5e;
+    --ui-danger-glow: rgba(244, 63, 94, 0.3);
+    --ui-glass-bg: rgba(255, 255, 255, 0.06);
+    --ui-glass-border: rgba(255, 255, 255, 0.10);
+    --ui-glass-highlight: rgba(255, 255, 255, 0.15);
+    --ui-text-primary: rgba(255, 255, 255, 0.95);
+    --ui-text-secondary: rgba(255, 255, 255, 0.60);
+    --ui-text-muted: rgba(255, 255, 255, 0.40);
+
+    /* Easing */
+    --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-out-quad: cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 /* Base Styles */
@@ -28,12 +46,14 @@ html, body {
 }
 
 body {
-    background-color: #1a1a1a;
+    background-color: #0a0a0f;
     display: flex;
     justify-content: center;
     align-items: center;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    color: var(--theme-text);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    color: var(--ui-text-primary);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
 }
 
 /* Game Container */
@@ -55,7 +75,12 @@ body {
     object-fit: contain;
 }
 
-/* Overlay (for menus, pause, game over) */
+/* =============================================================================
+   OVERLAY SYSTEM
+   Screen visibility controlled by data-state and data-ui attributes on
+   .game-container. All screens hidden by default; CSS selectors reveal them.
+   ============================================================================= */
+
 .overlay {
     position: absolute;
     top: 0;
@@ -67,70 +92,328 @@ body {
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    gap: 1rem;
-    transition: opacity 0.3s ease;
+    pointer-events: none;
 }
 
-.overlay.hidden {
+/* All screens hidden by default */
+.screen-menu,
+.screen-pause,
+.screen-gameover,
+.screen-settings {
     display: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    pointer-events: auto;
 }
 
-/* Overlay fade-in animation */
-.overlay.fade-in {
-    animation: fadeIn 0.3s ease forwards;
+/* Data-attribute driven visibility */
+.game-container[data-state="MENU"] .screen-menu,
+.game-container[data-state="PAUSED"] .screen-pause,
+.game-container[data-state="GAMEOVER"] .screen-gameover {
+    display: flex;
 }
 
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+.game-container[data-ui="settings"] .screen-settings {
+    display: flex;
 }
 
-/* Button Styles */
-.btn {
-    padding: 0.75rem 2rem;
-    font-size: 1.1rem;
-    font-weight: bold;
-    color: var(--theme-text);
-    background-color: var(--theme-button);
-    border: 2px solid var(--theme-accent);
-    border-radius: 4px;
+/* Settings overlays on top of other screens */
+.screen-settings {
+    z-index: 2;
+    background-color: var(--theme-overlay-bg);
+}
+
+/* Hide overlay background when playing (no screen visible) */
+.game-container[data-state="PLAYING"]:not([data-ui]) .overlay {
+    pointer-events: none;
+    background-color: transparent;
+}
+
+/* =============================================================================
+   GLASS PANEL
+   ============================================================================= */
+
+.ui-panel {
+    background: var(--ui-glass-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--ui-glass-border);
+    border-radius: 12px;
+    box-shadow:
+        0 8px 32px rgba(0, 0, 0, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    padding: 2rem;
+    min-width: 280px;
+    max-width: 340px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+    animation: slideUp 0.3s var(--ease-out-expo);
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* =============================================================================
+   TYPOGRAPHY
+   ============================================================================= */
+
+.ui-title {
+    font-size: 2rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: var(--ui-text-primary);
+}
+
+.ui-heading {
+    font-size: 1.25rem;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--ui-text-primary);
+}
+
+.ui-score {
+    font-size: 1.5rem;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--ui-accent);
+}
+
+.ui-label {
+    font-size: 0.875rem;
+    font-weight: 400;
+    color: var(--ui-text-secondary);
+}
+
+/* =============================================================================
+   BUTTONS
+   ============================================================================= */
+
+.ui-btn-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    width: 100%;
+}
+
+.ui-btn {
+    padding: 0.75rem 1.5rem;
+    min-height: 44px;
+    font-size: 0.9375rem;
+    font-weight: 500;
+    font-family: inherit;
+    border-radius: 10px;
+    border: none;
     cursor: pointer;
-    transition: background-color 0.2s ease, transform 0.1s ease;
-    min-width: 150px;
+    transition: all 0.15s var(--ease-out-quad);
+    width: 100%;
+    text-align: center;
 }
 
-.btn:hover {
-    background-color: var(--theme-button-hover);
+.ui-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--ui-accent-glow);
 }
 
-.btn:active {
+/* Primary button */
+.ui-btn--primary {
+    background: var(--ui-accent);
+    color: #ffffff;
+    box-shadow: 0 4px 14px var(--ui-accent-glow);
+}
+
+.ui-btn--primary:hover {
+    background: var(--ui-accent-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px var(--ui-accent-glow);
+}
+
+.ui-btn--primary:active {
     transform: scale(0.98);
 }
 
-/* Title Styles */
-.game-title {
-    font-size: 2.5rem;
-    color: var(--theme-accent);
-    text-transform: uppercase;
-    letter-spacing: 0.2em;
-    margin-bottom: 1rem;
+/* Ghost button */
+.ui-btn--ghost {
+    background: var(--ui-glass-bg);
+    color: var(--ui-text-primary);
+    border: 1px solid var(--ui-glass-border);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
 }
 
-/* Score Display */
-.score-display {
-    font-size: 1.2rem;
-    color: var(--theme-text);
+.ui-btn--ghost:hover {
+    background: var(--ui-glass-highlight);
+    transform: translateY(-1px);
 }
 
-/* Responsive adjustments */
+.ui-btn--ghost:active {
+    transform: scale(0.98);
+}
+
+/* Danger button */
+.ui-btn--danger {
+    background: transparent;
+    color: var(--ui-danger);
+    border: 1px solid rgba(244, 63, 94, 0.4);
+}
+
+.ui-btn--danger:hover {
+    background: rgba(244, 63, 94, 0.1);
+    transform: translateY(-1px);
+}
+
+.ui-btn--danger:active {
+    transform: scale(0.98);
+}
+
+.ui-btn--danger:focus-visible {
+    box-shadow: 0 0 0 3px var(--ui-danger-glow);
+}
+
+/* =============================================================================
+   SETTINGS TOGGLE
+   ============================================================================= */
+
+.ui-setting-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    padding: 0.5rem 0;
+}
+
+.ui-toggle {
+    background: none;
+    border: none;
+    padding: 10px 0;
+    min-height: 44px;
+    cursor: pointer;
+    outline: none;
+    display: flex;
+    align-items: center;
+}
+
+.ui-toggle:focus-visible .ui-toggle__track {
+    box-shadow: 0 0 0 3px var(--ui-accent-glow);
+}
+
+.ui-toggle__track {
+    display: flex;
+    align-items: center;
+    width: 44px;
+    height: 24px;
+    border-radius: 12px;
+    background: var(--ui-glass-highlight);
+    padding: 2px;
+    transition: background 0.2s var(--ease-out-quad);
+}
+
+.ui-toggle[aria-checked="true"] .ui-toggle__track {
+    background: var(--ui-accent);
+}
+
+.ui-toggle__thumb {
+    display: block;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #ffffff;
+    transform: translateX(0);
+    transition: transform 0.2s var(--ease-out-quad);
+}
+
+.ui-toggle[aria-checked="true"] .ui-toggle__thumb {
+    transform: translateX(20px);
+}
+
+/* =============================================================================
+   GAME OVER FADE-IN
+   ============================================================================= */
+
+.screen-gameover .ui-panel {
+    animation: fadeSlideUp 0.3s var(--ease-out-expo);
+}
+
+@keyframes fadeSlideUp {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* =============================================================================
+   MOBILE PAUSE BUTTON
+   ============================================================================= */
+
+.mobile-pause-btn {
+    display: none;
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background: var(--ui-glass-bg);
+    border: 1px solid var(--ui-glass-border);
+    color: var(--ui-text-secondary);
+    cursor: pointer;
+    justify-content: center;
+    align-items: center;
+    transition: background 0.15s var(--ease-out-quad);
+    z-index: 10;
+}
+
+.mobile-pause-btn:hover {
+    background: var(--ui-glass-highlight);
+}
+
+.mobile-pause-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px var(--ui-accent-glow);
+}
+
+/* Only visible on touch/coarse-pointer devices during PLAYING state */
+@media (pointer: coarse) {
+    .game-container[data-state="PLAYING"] .mobile-pause-btn {
+        display: flex;
+    }
+}
+
+/* =============================================================================
+   RESPONSIVE
+   ============================================================================= */
+
 @media (max-width: 480px) {
-    .game-title {
-        font-size: 1.8rem;
+    .ui-panel {
+        min-width: auto;
+        max-width: calc(100% - 2rem);
+        padding: 1.5rem;
     }
 
-    .btn {
-        padding: 0.6rem 1.5rem;
-        font-size: 1rem;
-        min-width: 120px;
+    .ui-title {
+        font-size: 1.5rem;
+    }
+
+    .ui-heading {
+        font-size: 1.125rem;
     }
 }

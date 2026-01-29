@@ -9,7 +9,72 @@
 <body>
     <div class="game-container">
         <canvas id="game-canvas"></canvas>
-        <div id="overlay" class="overlay hidden"></div>
+
+        <!-- UI Overlay — screens shown/hidden via data-state and data-ui attributes -->
+        <div id="overlay" class="overlay">
+
+            <!-- Start Menu -->
+            <div class="screen-menu" role="dialog" aria-label="Start menu">
+                <div class="ui-panel">
+                    <h1 class="ui-title">SNAKE</h1>
+                    <div class="ui-btn-group">
+                        <button class="ui-btn ui-btn--primary" data-action="play">Play</button>
+                        <button class="ui-btn ui-btn--ghost" data-action="settings">Settings</button>
+                        <button class="ui-btn ui-btn--ghost" data-action="highscores">High Scores</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pause Overlay -->
+            <div class="screen-pause" role="dialog" aria-label="Game paused">
+                <div class="ui-panel">
+                    <h2 class="ui-heading">Paused</h2>
+                    <div class="ui-btn-group">
+                        <button class="ui-btn ui-btn--primary" data-action="resume">Resume</button>
+                        <button class="ui-btn ui-btn--ghost" data-action="settings">Settings</button>
+                        <button class="ui-btn ui-btn--danger" data-action="quit">Quit</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Game Over Screen -->
+            <div class="screen-gameover" role="dialog" aria-label="Game over">
+                <div class="ui-panel">
+                    <h2 class="ui-heading">Game Over</h2>
+                    <p class="ui-score" id="final-score">0</p>
+                    <div class="ui-btn-group">
+                        <button class="ui-btn ui-btn--primary" data-action="restart">Restart</button>
+                        <button class="ui-btn ui-btn--ghost" data-action="menu">Menu</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Screen (modal overlay) -->
+            <div class="screen-settings" role="dialog" aria-label="Settings">
+                <div class="ui-panel">
+                    <h2 class="ui-heading">Settings</h2>
+                    <div class="ui-setting-row">
+                        <label class="ui-label" for="wall-collision-toggle">Wall Collision</label>
+                        <button class="ui-toggle" id="wall-collision-toggle" role="switch" aria-checked="true" data-action="toggle-wall-collision">
+                            <span class="ui-toggle__track">
+                                <span class="ui-toggle__thumb"></span>
+                            </span>
+                        </button>
+                    </div>
+                    <div class="ui-btn-group">
+                        <button class="ui-btn ui-btn--ghost" data-action="settings-back">Back</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mobile Pause Button (coarse pointer only) -->
+        <button class="mobile-pause-btn" data-action="pause" aria-label="Pause game">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                <rect x="4" y="3" width="4" height="14" rx="1" fill="currentColor"/>
+                <rect x="12" y="3" width="4" height="14" rx="1" fill="currentColor"/>
+            </svg>
+        </button>
     </div>
     <script src="game.js"></script>
 </body>
