@@ -708,11 +708,14 @@ class UIManager {
         this.container = container;
         this.overlay = overlay;
         this.game = game;
-        this.previousState = null;
 
         // DOM cache
         this.finalScoreEl = document.getElementById('final-score');
         this.wallToggle = document.getElementById('wall-collision-toggle');
+
+        // Sync toggle with stored value on init (HTML hardcodes true)
+        this.wallToggle.setAttribute('aria-checked',
+            String(this.game.wallCollisionEnabled));
 
         // Event delegation on overlay
         this.handleOverlayClick = this.handleOverlayClick.bind(this);
@@ -721,18 +724,11 @@ class UIManager {
 
     updateState(newState) {
         this.container.setAttribute('data-state', newState);
-
-        // Clear settings modal when state changes (unless we're opening settings)
-        if (!this._settingsOpen) {
-            this.container.removeAttribute('data-ui');
-        }
-        this._settingsOpen = false;
+        // Settings modal has its own lifecycle (showSettings/hideSettings)
+        // — don't touch data-ui here
     }
 
     showSettings() {
-        this.previousState = this.game.state;
-        this._settingsOpen = true;
-
         // Sync toggle with current value
         this.wallToggle.setAttribute('aria-checked',
             String(this.game.wallCollisionEnabled));
@@ -1048,7 +1044,7 @@ if (typeof document !== 'undefined') {
 
         game.inputHandler.onAction('escape', () => {
             if (container.hasAttribute('data-ui')) return;
-            if (game.state === GameState.PLAYING || game.state === GameState.PAUSED) {
+            if (game.state === GameState.PLAYING || game.state === GameState.PAUSED || game.state === GameState.GAMEOVER) {
                 game.reset();
                 game.setState(GameState.MENU);
             }

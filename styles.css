@@ -130,8 +130,7 @@ body {
 }
 
 /* Hide overlay background when playing (no screen visible) */
-.game-container[data-state="PLAYING"]:not([data-ui]) .overlay,
-.game-container[data-state="PLAYING"]:not([data-ui="settings"]) .overlay {
+.game-container[data-state="PLAYING"]:not([data-ui]) .overlay {
     pointer-events: none;
     background-color: transparent;
 }

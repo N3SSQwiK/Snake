@@ -53,7 +53,7 @@ The system SHALL allow players to pause and resume the game during play.
 - **THEN** the game resets and transitions to MENU state
 
 #### Scenario: Escape key returns to menu
-- **GIVEN** the game is in PLAYING or PAUSED state
+- **GIVEN** the game is in PLAYING, PAUSED, or GAMEOVER state
 - **WHEN** the player presses Escape
 - **THEN** the game resets and transitions to MENU state
 
