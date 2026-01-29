@@ -550,6 +550,9 @@ class InputHandler {
         // Action callbacks (spacebar, escape, etc.)
         this.actionCallbacks = {};
 
+        // Optional gate: when set and returns true, all input is suppressed
+        this.inputGate = null;
+
         // Touch tracking
         this.touchStartX = null;
         this.touchStartY = null;
@@ -585,6 +588,9 @@ class InputHandler {
     }
 
     handleKeyDown(event) {
+        // Block all input when gate is active (e.g., settings modal open)
+        if (this.inputGate && this.inputGate()) return;
+
         // Action keys (filter event.repeat to prevent held-key spam)
         if (!event.repeat) {
             if (event.key === ' ' && this.actionCallbacks.pause) {
@@ -622,6 +628,7 @@ class InputHandler {
     }
 
     handleTouchStart(event) {
+        if (this.inputGate && this.inputGate()) return;
         event.preventDefault();
         const touch = event.touches[0];
         this.touchStartX = touch.clientX;
@@ -1032,9 +1039,11 @@ if (typeof document !== 'undefined') {
         const overlay = document.getElementById('overlay');
         game.ui = new UIManager(container, overlay, game);
 
-        // Wire action keys (blocked while settings modal is open)
+        // Block all input while settings modal is open
+        game.inputHandler.inputGate = () => container.hasAttribute('data-ui');
+
+        // Wire action keys
         game.inputHandler.onAction('pause', () => {
-            if (container.hasAttribute('data-ui')) return;
             if (game.state === GameState.PLAYING) {
                 game.setState(GameState.PAUSED);
             } else if (game.state === GameState.PAUSED) {
@@ -1043,7 +1052,6 @@ if (typeof document !== 'undefined') {
         });
 
         game.inputHandler.onAction('escape', () => {
-            if (container.hasAttribute('data-ui')) return;
             if (game.state === GameState.PLAYING || game.state === GameState.PAUSED || game.state === GameState.GAMEOVER) {
                 game.reset();
                 game.setState(GameState.MENU);
