@@ -43,5 +43,5 @@
 - [x] 7.1 Unit test: leaderboard sorts correctly
 - [x] 7.2 Unit test: only top 10 retained
 - [x] 7.3 Unit test: isHighScore returns correct result
-- [ ] 7.4 Manual test: initials entry flow
-- [ ] 7.5 Manual test: leaderboard displays correctly
+- [x] 7.4 Manual test: initials entry flow
+- [x] 7.5 Manual test: leaderboard displays correctly
