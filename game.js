@@ -32,22 +32,189 @@ const FOOD_DECAY_TICKS = 100;              // 10s at 10Hz
 const FOOD_DECAY_WARNING_THRESHOLD = 0.25; // Blink at <25%
 const FOOD_MAX_SPAWN_ATTEMPTS = 100;
 
-// Default theme colors (Neo-Arcade Emerald)
-const DEFAULT_THEME = {
-    name: 'classic',
-    colors: {
-        background: '#0a0a0f',
-        grid: '#1a1a24',
-        snake: '#10b981',
-        snakeHead: '#059669',
-        snakeTail: '#34d399',
-        snakeGlow: 'rgba(16, 185, 129, 0.4)',
-        snakeEyes: 'rgba(255, 255, 255, 0.9)',
-        food: '#ef4444',
-        bonusFood: '#f59e0b',
-        poisonFood: '#a855f7'
+// Theme definitions
+const THEMES = {
+    classic: {
+        name: 'Classic',
+        colors: {
+            background: '#0a0a0f',
+            grid: '#1a1a24',
+            snake: '#10b981',
+            snakeHead: '#059669',
+            snakeTail: '#34d399',
+            snakeGlow: 'rgba(16, 185, 129, 0.4)',
+            snakeEyes: 'rgba(255, 255, 255, 0.9)',
+            food: '#ef4444',
+            bonusFood: '#f59e0b',
+            poisonFood: '#a855f7',
+            foodStem: '#5d4037',
+            foodLeaf: '#2d7a3a',
+            scoreText: '#ffffff',
+            scoreShadow: 'rgba(0, 0, 0, 0.7)'
+        },
+        ui: {
+            accent: '#10b981',
+            accentGlow: 'rgba(16, 185, 129, 0.35)',
+            accentHover: '#34d399',
+            danger: '#f43f5e',
+            dangerGlow: 'rgba(244, 63, 94, 0.3)',
+            glass: 'rgba(255, 255, 255, 0.06)',
+            glassBorder: 'rgba(255, 255, 255, 0.10)',
+            glassHighlight: 'rgba(255, 255, 255, 0.15)',
+            textPrimary: 'rgba(255, 255, 255, 0.95)',
+            textSecondary: 'rgba(255, 255, 255, 0.60)',
+            textMuted: 'rgba(255, 255, 255, 0.40)',
+            gold: '#f59e0b',
+            goldGlow: 'rgba(245, 158, 11, 0.4)'
+        },
+        unlockCondition: { type: 'default' }
+    },
+    dark: {
+        name: 'Dark',
+        colors: {
+            background: '#0c0c10',
+            grid: '#18181f',
+            snake: '#7c8ca1',
+            snakeHead: '#94a3b8',
+            snakeTail: '#64748b',
+            snakeGlow: 'rgba(148, 163, 184, 0.25)',
+            snakeEyes: 'rgba(226, 232, 240, 0.85)',
+            food: '#c2614b',
+            bonusFood: '#d4915e',
+            poisonFood: '#8b6caf',
+            foodStem: '#4a3f38',
+            foodLeaf: '#4a6350',
+            scoreText: 'rgba(226, 232, 240, 0.9)',
+            scoreShadow: 'rgba(0, 0, 0, 0.8)'
+        },
+        ui: {
+            accent: '#6366f1',
+            accentGlow: 'rgba(99, 102, 241, 0.3)',
+            accentHover: '#818cf8',
+            danger: '#e35b6f',
+            dangerGlow: 'rgba(227, 91, 111, 0.25)',
+            glass: 'rgba(255, 255, 255, 0.04)',
+            glassBorder: 'rgba(255, 255, 255, 0.07)',
+            glassHighlight: 'rgba(255, 255, 255, 0.10)',
+            textPrimary: 'rgba(226, 232, 240, 0.92)',
+            textSecondary: 'rgba(226, 232, 240, 0.50)',
+            textMuted: 'rgba(226, 232, 240, 0.30)',
+            gold: '#d4915e',
+            goldGlow: 'rgba(212, 145, 94, 0.35)'
+        },
+        unlockCondition: { type: 'score', threshold: 50 }
+    },
+    light: {
+        name: 'Light',
+        colors: {
+            background: '#e8e4df',
+            grid: '#d6d1ca',
+            snake: '#2d6a4f',
+            snakeHead: '#1b4332',
+            snakeTail: '#40916c',
+            snakeGlow: 'rgba(45, 106, 79, 0.25)',
+            snakeEyes: 'rgba(27, 67, 50, 0.9)',
+            food: '#c1453b',
+            bonusFood: '#c77a2e',
+            poisonFood: '#7b4d9e',
+            foodStem: '#6b5545',
+            foodLeaf: '#3a7d44',
+            scoreText: '#2c2c2c',
+            scoreShadow: 'rgba(255, 255, 255, 0.6)'
+        },
+        ui: {
+            accent: '#2d6a4f',
+            accentGlow: 'rgba(45, 106, 79, 0.25)',
+            accentHover: '#40916c',
+            danger: '#c1453b',
+            dangerGlow: 'rgba(193, 69, 59, 0.2)',
+            glass: 'rgba(0, 0, 0, 0.04)',
+            glassBorder: 'rgba(0, 0, 0, 0.08)',
+            glassHighlight: 'rgba(0, 0, 0, 0.12)',
+            textPrimary: 'rgba(30, 30, 30, 0.92)',
+            textSecondary: 'rgba(30, 30, 30, 0.55)',
+            textMuted: 'rgba(30, 30, 30, 0.35)',
+            gold: '#c77a2e',
+            goldGlow: 'rgba(199, 122, 46, 0.3)'
+        },
+        unlockCondition: { type: 'score', threshold: 100 }
+    },
+    retro: {
+        name: 'Retro',
+        colors: {
+            background: '#1a120e',
+            grid: '#2a1f18',
+            snake: '#d4883a',
+            snakeHead: '#e09940',
+            snakeTail: '#b87330',
+            snakeGlow: 'rgba(212, 136, 58, 0.35)',
+            snakeEyes: 'rgba(255, 230, 180, 0.9)',
+            food: '#c94545',
+            bonusFood: '#e6c84d',
+            poisonFood: '#8a5eb5',
+            foodStem: '#5c4033',
+            foodLeaf: '#6b8c42',
+            scoreText: '#e8d5b0',
+            scoreShadow: 'rgba(0, 0, 0, 0.75)'
+        },
+        ui: {
+            accent: '#d4883a',
+            accentGlow: 'rgba(212, 136, 58, 0.35)',
+            accentHover: '#e09940',
+            danger: '#c94545',
+            dangerGlow: 'rgba(201, 69, 69, 0.3)',
+            glass: 'rgba(232, 213, 176, 0.05)',
+            glassBorder: 'rgba(232, 213, 176, 0.10)',
+            glassHighlight: 'rgba(232, 213, 176, 0.14)',
+            textPrimary: 'rgba(232, 213, 176, 0.92)',
+            textSecondary: 'rgba(232, 213, 176, 0.55)',
+            textMuted: 'rgba(232, 213, 176, 0.35)',
+            gold: '#e6c84d',
+            goldGlow: 'rgba(230, 200, 77, 0.35)'
+        },
+        unlockCondition: { type: 'scoreWithDifficulty', threshold: 200, minDifficulty: 'medium' }
+    },
+    neon: {
+        name: 'Neon',
+        colors: {
+            background: '#080810',
+            grid: '#101020',
+            snake: '#22d3ee',
+            snakeHead: '#06b6d4',
+            snakeTail: '#67e8f9',
+            snakeGlow: 'rgba(34, 211, 238, 0.45)',
+            snakeEyes: 'rgba(255, 255, 255, 0.95)',
+            food: '#f472b6',
+            bonusFood: '#fbbf24',
+            poisonFood: '#c084fc',
+            foodStem: '#4a4055',
+            foodLeaf: '#2dd4a8',
+            scoreText: '#e0f2fe',
+            scoreShadow: 'rgba(0, 0, 0, 0.8)'
+        },
+        ui: {
+            accent: '#22d3ee',
+            accentGlow: 'rgba(34, 211, 238, 0.35)',
+            accentHover: '#67e8f9',
+            danger: '#f472b6',
+            dangerGlow: 'rgba(244, 114, 182, 0.3)',
+            glass: 'rgba(255, 255, 255, 0.05)',
+            glassBorder: 'rgba(255, 255, 255, 0.09)',
+            glassHighlight: 'rgba(255, 255, 255, 0.14)',
+            textPrimary: 'rgba(224, 242, 254, 0.95)',
+            textSecondary: 'rgba(224, 242, 254, 0.55)',
+            textMuted: 'rgba(224, 242, 254, 0.35)',
+            gold: '#fbbf24',
+            goldGlow: 'rgba(251, 191, 36, 0.4)'
+        },
+        unlockCondition: { type: 'scoreWithDifficulty', threshold: 300, minDifficulty: 'hard' }
     }
 };
+
+const DEFAULT_THEME = THEMES.classic;
+
+// Difficulty rank mapping for theme unlock checks
+const DIFFICULTY_RANKS = { easy: 1, medium: 2, hard: 3 };
 
 // =============================================================================
 // STORAGE MANAGER CLASS
@@ -117,6 +284,49 @@ class StorageManager {
         } catch {
             return '';
         }
+    }
+
+    getUnlockedThemes() {
+        return this.get('unlockedThemes', ['classic']);
+    }
+
+    isThemeUnlocked(themeName) {
+        return this.getUnlockedThemes().includes(themeName);
+    }
+
+    unlockTheme(themeName) {
+        const unlocked = this.getUnlockedThemes();
+        if (!unlocked.includes(themeName)) {
+            unlocked.push(themeName);
+            this.set('unlockedThemes', unlocked);
+        }
+    }
+
+    checkThemeUnlocks(score, difficulty) {
+        const newlyUnlocked = [];
+        for (const [key, theme] of Object.entries(THEMES)) {
+            if (this.isThemeUnlocked(key)) continue;
+            const cond = theme.unlockCondition;
+            if (cond.type === 'default') {
+                this.unlockTheme(key);
+                newlyUnlocked.push(key);
+            } else if (cond.type === 'score') {
+                if (score >= cond.threshold) {
+                    this.unlockTheme(key);
+                    newlyUnlocked.push(key);
+                }
+            } else if (cond.type === 'scoreWithDifficulty') {
+                if (score >= cond.threshold) {
+                    // If difficulty system not present, unlock on score alone
+                    if (difficulty === undefined ||
+                        (DIFFICULTY_RANKS[difficulty] || 0) >= (DIFFICULTY_RANKS[cond.minDifficulty] || 0)) {
+                        this.unlockTheme(key);
+                        newlyUnlocked.push(key);
+                    }
+                }
+            }
+        }
+        return newlyUnlocked;
     }
 }
 
@@ -541,7 +751,7 @@ class Renderer {
         this.ctx.shadowBlur = 0;
 
         // Draw stem
-        this.ctx.strokeStyle = '#5d4037';  // Brown
+        this.ctx.strokeStyle = this.theme.colors.foodStem || '#5d4037';
         this.ctx.lineWidth = 2;
         this.ctx.lineCap = 'round';
         this.ctx.beginPath();
@@ -550,7 +760,7 @@ class Renderer {
         this.ctx.stroke();
 
         // Draw leaf
-        this.ctx.fillStyle = '#4caf50';  // Green
+        this.ctx.fillStyle = this.theme.colors.foodLeaf || '#4caf50';
         this.ctx.beginPath();
         this.ctx.ellipse(centerX + 4, topY, 3, 1.5, Math.PI / 4, 0, Math.PI * 2);
         this.ctx.fill();
@@ -563,11 +773,11 @@ class Renderer {
         this.ctx.textBaseline = 'top';
 
         // Draw shadow for readability
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        this.ctx.fillStyle = this.theme.colors.scoreShadow || 'rgba(0, 0, 0, 0.7)';
         this.ctx.fillText(`Score: ${score}  Length: ${length}`, 11, 11);
 
         // Draw text
-        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillStyle = this.theme.colors.scoreText || '#ffffff';
         this.ctx.fillText(`Score: ${score}  Length: ${length}`, 10, 10);
     }
 }
@@ -790,7 +1000,82 @@ class UIManager {
         this.wallToggle.setAttribute('aria-checked',
             String(this.game.wallCollisionEnabled));
 
+        this.renderThemePicker();
         this.container.setAttribute('data-ui', 'settings');
+    }
+
+    renderThemePicker() {
+        const grid = document.getElementById('theme-picker-grid');
+        if (!grid) return;
+        grid.replaceChildren();
+
+        const unlocked = this.game.storage.getUnlockedThemes();
+        const currentTheme = this.game.currentTheme;
+
+        for (const [key, theme] of Object.entries(THEMES)) {
+            const isUnlocked = unlocked.includes(key);
+            const isActive = key === currentTheme;
+
+            const swatch = document.createElement('button');
+            swatch.className = 'theme-swatch' +
+                (isActive ? ' theme-swatch--active' : '') +
+                (!isUnlocked ? ' theme-swatch--locked' : '');
+            swatch.setAttribute('aria-label', theme.name + (isUnlocked ? '' : ' (locked)'));
+            swatch.dataset.theme = key;
+
+            // Color preview squares
+            const preview = document.createElement('div');
+            preview.className = 'theme-swatch__preview';
+            preview.style.backgroundColor = theme.colors.background;
+
+            const snakeDot = document.createElement('span');
+            snakeDot.className = 'theme-swatch__dot';
+            snakeDot.style.backgroundColor = theme.colors.snake;
+            const foodDot = document.createElement('span');
+            foodDot.className = 'theme-swatch__dot';
+            foodDot.style.backgroundColor = theme.colors.food;
+            preview.appendChild(snakeDot);
+            preview.appendChild(foodDot);
+
+            const name = document.createElement('span');
+            name.className = 'theme-swatch__name';
+            name.textContent = theme.name;
+
+            swatch.appendChild(preview);
+            swatch.appendChild(name);
+
+            if (!isUnlocked) {
+                const lock = document.createElement('span');
+                lock.className = 'theme-swatch__lock';
+                const cond = theme.unlockCondition;
+                if (cond.type === 'score') {
+                    lock.textContent = `Score ${cond.threshold}`;
+                } else if (cond.type === 'scoreWithDifficulty') {
+                    lock.textContent = `Score ${cond.threshold} (${cond.minDifficulty}+)`;
+                }
+                swatch.appendChild(lock);
+            }
+
+            if (isActive) {
+                const check = document.createElement('span');
+                check.className = 'theme-swatch__check';
+                check.textContent = '\u2713';
+                swatch.appendChild(check);
+            }
+
+            swatch.addEventListener('click', () => {
+                if (!isUnlocked) return;
+                this.game.applyTheme(key);
+                this.renderThemePicker();
+            });
+
+            grid.appendChild(swatch);
+        }
+    }
+
+    showThemeUnlockNotification(themeNames) {
+        const names = themeNames.map(k => THEMES[k]?.name || k).join(', ');
+        this._pendingThemeUnlock = names;
     }
 
     hideSettings() {
@@ -812,6 +1097,17 @@ class UIManager {
         this.gameoverHeading.textContent = 'Game Over';
         this.gameoverHeading.classList.remove('new-high-score');
         this.leaderboardStatusEl.textContent = '';
+
+        // Show theme unlock notification if pending
+        const themeUnlockEl = document.getElementById('theme-unlock-status');
+        if (themeUnlockEl) {
+            if (this._pendingThemeUnlock) {
+                themeUnlockEl.textContent = `Theme unlocked: ${this._pendingThemeUnlock}!`;
+                this._pendingThemeUnlock = null;
+            } else {
+                themeUnlockEl.textContent = '';
+            }
+        }
     }
 
     showInitials(score, storage) {
@@ -1072,6 +1368,10 @@ class Game {
         // Wall collision setting (true = GAMEOVER on wall hit, false = wrap-around)
         this.wallCollisionEnabled = this.storage.get('wallCollision', true);
 
+        // Load saved theme
+        this.currentTheme = this.storage.get('theme', 'classic');
+        this.applyTheme(this.currentTheme);
+
         // Initialize input handler
         this.inputHandler = new InputHandler(canvas, () => this.snake.direction);
 
@@ -1105,6 +1405,13 @@ class Game {
             return; // Re-entry guard
         }
         this.setState(GameState.GAMEOVER);
+
+        // Check theme unlocks
+        const newThemes = this.storage.checkThemeUnlocks(this.score, this.difficulty);
+        if (this.ui && newThemes.length > 0) {
+            this.ui.showThemeUnlockNotification(newThemes);
+        }
+
         if (this.ui && this.score > 0 && this.storage.isHighScore(this.score)) {
             this.ui.showInitials(this.score, this.storage);
         }
@@ -1128,6 +1435,39 @@ class Game {
     setWallCollision(enabled) {
         this.wallCollisionEnabled = enabled;
         this.storage.set('wallCollision', enabled);
+    }
+
+    applyTheme(themeName) {
+        const theme = THEMES[themeName];
+        if (!theme) return;
+
+        this.currentTheme = themeName;
+        this.renderer.setTheme(theme);
+        this.storage.set('theme', themeName);
+
+        // Update CSS custom properties for UI theming
+        if (typeof document !== 'undefined' && document.documentElement) {
+            const root = document.documentElement.style;
+            const ui = theme.ui;
+            root.setProperty('--ui-accent', ui.accent);
+            root.setProperty('--ui-accent-glow', ui.accentGlow);
+            root.setProperty('--ui-accent-hover', ui.accentHover);
+            root.setProperty('--ui-danger', ui.danger);
+            root.setProperty('--ui-danger-glow', ui.dangerGlow);
+            root.setProperty('--ui-glass-bg', ui.glass);
+            root.setProperty('--ui-glass-border', ui.glassBorder);
+            root.setProperty('--ui-glass-highlight', ui.glassHighlight);
+            root.setProperty('--ui-text-primary', ui.textPrimary);
+            root.setProperty('--ui-text-secondary', ui.textSecondary);
+            root.setProperty('--ui-text-muted', ui.textMuted);
+            root.setProperty('--ui-gold', ui.gold);
+            root.setProperty('--ui-gold-glow', ui.goldGlow);
+            root.setProperty('--theme-bg', theme.colors.background);
+            root.setProperty('--theme-overlay-bg', theme.colors.background + 'd9');
+
+            // Body background for light theme
+            document.body.style.backgroundColor = theme.colors.background;
+        }
     }
 
     start() {
