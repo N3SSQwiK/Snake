@@ -20,17 +20,22 @@ The system SHALL allow players to choose between smooth and classic animation st
 - **THEN** the saved animation style is applied
 
 ### Requirement: Smooth Animation Mode
-The system SHALL interpolate snake positions between game ticks when smooth mode is active.
+The system SHALL interpolate snake body segment positions between game ticks when smooth mode is active. The head is excluded from interpolation to prevent visual jitter across varying display refresh rates.
 
-#### Scenario: Snake interpolation
+#### Scenario: Snake body interpolation
 - **GIVEN** smooth mode is active
 - **WHEN** the renderer draws between game ticks
-- **THEN** each snake segment is rendered at an interpolated position between its previous and current grid cell
+- **THEN** each snake body segment (excluding the head) is rendered at an interpolated position between its previous and current grid cell
+
+#### Scenario: Snake head rendering
+- **GIVEN** smooth mode is active
+- **WHEN** the renderer draws between game ticks
+- **THEN** the snake head is rendered at its exact grid cell position with no interpolation
 
 #### Scenario: Interpolation factor
 - **GIVEN** smooth mode is active
 - **WHEN** time has elapsed since the last game tick
-- **THEN** the interpolation factor is calculated as elapsed time divided by tick interval, clamped to 0.0–1.0
+- **THEN** the interpolation factor is calculated as elapsed time divided by tick interval, clamped to 0.0–1.0, with the accumulator reset to zero after each tick to ensure a clean 0-to-1 ramp without carryover jitter
 
 #### Scenario: Food rendering
 - **GIVEN** smooth mode is active
