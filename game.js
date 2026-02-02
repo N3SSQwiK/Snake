@@ -78,7 +78,7 @@ const THEMES = {
             snakeHead: '#94a3b8',
             snakeTail: '#64748b',
             snakeGlow: 'rgba(148, 163, 184, 0.25)',
-            snakeEyes: 'rgba(226, 232, 240, 0.85)',
+            snakeEyes: 'rgba(15, 23, 42, 0.85)',
             food: '#c2614b',
             bonusFood: '#d4915e',
             poisonFood: '#8b6caf',
@@ -113,7 +113,7 @@ const THEMES = {
             snakeHead: '#1b4332',
             snakeTail: '#40916c',
             snakeGlow: 'rgba(45, 106, 79, 0.25)',
-            snakeEyes: 'rgba(27, 67, 50, 0.9)',
+            snakeEyes: 'rgba(255, 255, 255, 0.9)',
             food: '#c1453b',
             bonusFood: '#c77a2e',
             poisonFood: '#7b4d9e',
@@ -148,7 +148,7 @@ const THEMES = {
             snakeHead: '#e09940',
             snakeTail: '#b87330',
             snakeGlow: 'rgba(212, 136, 58, 0.35)',
-            snakeEyes: 'rgba(255, 230, 180, 0.9)',
+            snakeEyes: 'rgba(60, 30, 0, 0.9)',
             food: '#c94545',
             bonusFood: '#e6c84d',
             poisonFood: '#8a5eb5',
@@ -651,11 +651,9 @@ class Renderer {
             );
         }
 
-        // Draw head with more prominent rounding
+        // Draw head at grid position (no interpolation — avoids jitter on the focal point)
         const head = snake.body[0];
-        const headPos = useInterp
-            ? this._interpSegment(prevBody[0], head, interpFactor)
-            : head;
+        const headPos = head;
         const headPadding = 1;
         const headRadius = 6;
 
@@ -1031,6 +1029,16 @@ class UIManager {
 
         this.renderThemePicker();
         this.container.setAttribute('data-ui', 'settings');
+
+        // Scroll settings screen to top after layout renders
+        requestAnimationFrame(() => {
+            const settingsScreen = this.container.querySelector('.screen-settings');
+            if (settingsScreen) {
+                settingsScreen.scrollTop = 0;
+                const panel = settingsScreen.querySelector('.ui-panel');
+                if (panel) panel.scrollTop = 0;
+            }
+        });
     }
 
     renderThemePicker() {
@@ -1166,7 +1174,24 @@ class UIManager {
                 }
                 e.target.value = '';
             };
-            this._initialsSlotTapHandler = () => {
+            this._initialsMobileKeydownHandler = (e) => {
+                if (e.key === 'Backspace') {
+                    e.preventDefault();
+                    this._initialsChars[this._initialsIndex] = 0;
+                    if (this._initialsIndex > 0) {
+                        this._initialsIndex--;
+                    }
+                    this._renderInitialsSlots();
+                }
+            };
+            this.initialsMobileInput.addEventListener('keydown', this._initialsMobileKeydownHandler);
+            this._initialsSlotTapHandler = (e) => {
+                const slot = e.currentTarget;
+                const index = Array.from(this.initialsSlots).indexOf(slot);
+                if (index !== -1) {
+                    this._initialsIndex = index;
+                    this._renderInitialsSlots();
+                }
                 this.initialsMobileInput.focus();
             };
             this.initialsMobileInput.addEventListener('input', this._initialsMobileInputHandler);
@@ -1186,6 +1211,10 @@ class UIManager {
         if (this.initialsMobileInput && this._initialsMobileInputHandler) {
             this.initialsMobileInput.removeEventListener('input', this._initialsMobileInputHandler);
             this._initialsMobileInputHandler = null;
+            if (this._initialsMobileKeydownHandler) {
+                this.initialsMobileInput.removeEventListener('keydown', this._initialsMobileKeydownHandler);
+                this._initialsMobileKeydownHandler = null;
+            }
             this.initialsMobileInput.blur();
         }
         if (this._initialsSlotTapHandler) {
@@ -1227,6 +1256,12 @@ class UIManager {
             this._submitInitials();
         } else if (key === 'Escape') {
             this.hideInitials();
+        } else if (key === 'Backspace') {
+            this._initialsChars[this._initialsIndex] = 0;
+            if (this._initialsIndex > 0) {
+                this._initialsIndex--;
+            }
+            this._renderInitialsSlots();
         } else if (/^[a-zA-Z]$/.test(key)) {
             this._initialsChars[this._initialsIndex] = key.toUpperCase().charCodeAt(0) - 65;
             if (this._initialsIndex < 2) {
@@ -1534,12 +1569,13 @@ class Game {
         this.lastTime = currentTime;
 
         // Accumulate time for fixed-step game logic
-        this.tickAccumulator += deltaTime;
+        // Cap delta to avoid spiral of death after tab-away or GC pause
+        this.tickAccumulator += Math.min(deltaTime, this.tickInterval);
 
-        // Run game ticks at fixed rate
-        while (this.tickAccumulator >= this.tickInterval) {
+        // Run game tick when interval elapsed, reset accumulator for clean 0→1 alpha
+        if (this.tickAccumulator >= this.tickInterval) {
             this.tick();
-            this.tickAccumulator -= this.tickInterval;
+            this.tickAccumulator = 0;
         }
 
         // Render every frame

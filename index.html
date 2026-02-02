@@ -75,17 +75,16 @@
             <!-- Leaderboard (modal overlay) -->
             <div class="screen-leaderboard" role="dialog" aria-label="High scores">
                 <div class="ui-panel ui-panel--wide">
+                    <button class="ui-panel__close" data-action="leaderboard-back" aria-label="Close leaderboard">&times;</button>
                     <h2 class="ui-heading">High Scores</h2>
                     <div class="leaderboard-table" id="leaderboard-body" aria-live="polite" aria-atomic="true"></div>
-                    <div class="ui-btn-group">
-                        <button class="ui-btn ui-btn--ghost" data-action="leaderboard-back">Back</button>
-                    </div>
                 </div>
             </div>
 
             <!-- Settings Screen (modal overlay) -->
             <div class="screen-settings" role="dialog" aria-label="Settings">
                 <div class="ui-panel">
+                    <button class="ui-panel__close" data-action="settings-back" aria-label="Close settings">&times;</button>
                     <h2 class="ui-heading">Settings</h2>
                     <div class="ui-setting-row">
                         <label class="ui-label" for="wall-collision-toggle">Wall Collision</label>
@@ -106,9 +105,6 @@
                     <div class="theme-picker">
                         <label class="ui-label">Theme</label>
                         <div class="theme-picker__grid" id="theme-picker-grid"></div>
-                    </div>
-                    <div class="ui-btn-group">
-                        <button class="ui-btn ui-btn--ghost" data-action="settings-back">Back</button>
                     </div>
                 </div>
             </div>
