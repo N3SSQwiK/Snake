@@ -1404,13 +1404,14 @@ class Game {
         if (this.state === GameState.GAMEOVER) {
             return; // Re-entry guard
         }
-        this.setState(GameState.GAMEOVER);
 
-        // Check theme unlocks
+        // Check theme unlocks before setState, which triggers updateScore
         const newThemes = this.storage.checkThemeUnlocks(this.score, this.difficulty);
         if (this.ui && newThemes.length > 0) {
             this.ui.showThemeUnlockNotification(newThemes);
         }
+
+        this.setState(GameState.GAMEOVER);
 
         if (this.ui && this.score > 0 && this.storage.isHighScore(this.score)) {
             this.ui.showInitials(this.score, this.storage);
