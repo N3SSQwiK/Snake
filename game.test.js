@@ -1664,3 +1664,89 @@ describe('Game Settings Persistence', () => {
         assert.ok(game.storage instanceof StorageManager);
     });
 });
+
+// =============================================================================
+// Theme Unlock Tests
+// =============================================================================
+
+describe('Theme Unlocks', () => {
+    let storage;
+
+    beforeEach(() => {
+        storage = new StorageManager('test_theme_');
+        storage.remove('unlockedThemes');
+    });
+
+    test('classic is unlocked by default', () => {
+        assert.deepStrictEqual(storage.getUnlockedThemes(), ['classic']);
+    });
+
+    test('isThemeUnlocked returns true for classic', () => {
+        assert.strictEqual(storage.isThemeUnlocked('classic'), true);
+    });
+
+    test('isThemeUnlocked returns false for locked theme', () => {
+        assert.strictEqual(storage.isThemeUnlocked('dark'), false);
+    });
+
+    test('unlockTheme adds to unlocked list', () => {
+        storage.unlockTheme('dark');
+        assert.strictEqual(storage.isThemeUnlocked('dark'), true);
+        assert.deepStrictEqual(storage.getUnlockedThemes(), ['classic', 'dark']);
+    });
+
+    test('unlockTheme is idempotent', () => {
+        storage.unlockTheme('dark');
+        storage.unlockTheme('dark');
+        const unlocked = storage.getUnlockedThemes();
+        assert.strictEqual(unlocked.filter(t => t === 'dark').length, 1);
+    });
+
+    test('checkThemeUnlocks returns newly unlocked themes for score 50', () => {
+        const result = storage.checkThemeUnlocks(50);
+        assert.ok(result.includes('dark'));
+        assert.ok(!result.includes('light')); // needs 100
+    });
+
+    test('checkThemeUnlocks returns multiple themes for high score', () => {
+        const result = storage.checkThemeUnlocks(150);
+        assert.ok(result.includes('dark'));
+        assert.ok(result.includes('light'));
+    });
+
+    test('checkThemeUnlocks skips already unlocked themes', () => {
+        storage.unlockTheme('dark');
+        const result = storage.checkThemeUnlocks(50);
+        assert.ok(!result.includes('dark'));
+    });
+
+    test('difficulty-gated themes unlock on score alone when difficulty undefined', () => {
+        const result = storage.checkThemeUnlocks(300);
+        assert.ok(result.includes('retro'));
+        assert.ok(result.includes('neon'));
+    });
+
+    test('difficulty-gated themes respect difficulty when provided', () => {
+        const result = storage.checkThemeUnlocks(300, 'easy');
+        assert.ok(!result.includes('retro')); // needs medium+
+        assert.ok(!result.includes('neon'));   // needs hard
+    });
+
+    test('difficulty medium unlocks retro but not neon', () => {
+        const result = storage.checkThemeUnlocks(300, 'medium');
+        assert.ok(result.includes('retro'));
+        assert.ok(!result.includes('neon'));
+    });
+
+    test('difficulty hard unlocks both retro and neon', () => {
+        const result = storage.checkThemeUnlocks(300, 'hard');
+        assert.ok(result.includes('retro'));
+        assert.ok(result.includes('neon'));
+    });
+
+    test('unlock state persists in localStorage', () => {
+        storage.unlockTheme('dark');
+        const storage2 = new StorageManager('test_theme_');
+        assert.ok(storage2.isThemeUnlocked('dark'));
+    });
+});

@@ -1,38 +1,37 @@
 # Continuity
 
 ## Summary
-Browser-based snake game with vanilla JS, canvas rendering, class-based architecture. Building toward v1.0 with themes, difficulty, audio, leaderboard, and accessibility.
+Browser-based snake game with vanilla JS, canvas rendering, class-based architecture. Building toward v1.0 with themes, difficulty, audio, extended input, and accessibility.
 
 ## Completed
-- Core game loop, snake mechanics, input handling, food system (PRs #1, #31, #32, #33)
+- Core game loop, snake mechanics, input handling, food system (PRs #1, #31-#33)
 - Wall collision with wrap-around mode, StorageManager (PR #34)
-- UI screens: start menu, pause, game over, settings with glassmorphism design (PR #35)
-- UIManager class, CSS data-attribute binding, event delegation, inputGate
-- Extended input proposal scaffolded (add-extended-input: D-pad, tap zones, gamepad)
-- OpenSpec `ui-screens` spec promoted (6 specs total), `add-ui-screens` archived
-- All PRs added to GitHub project board #4
+- UI screens: start menu, pause, game over, settings with glassmorphism (PR #35)
+- Leaderboard system: top-10 local scores, arcade initials entry, celebration animation (PR #37)
+- GitHub issue #36 created for add-extended-input, all proposals have matching issues
 
 ## In Progress
-None
+- PR #37 (add-leaderboard) open, awaiting merge
 
 ## Blocked
 None
 
 ## Key Files
-- `game.js` - All game code (~1050 lines): Game, Snake, Food, Renderer, InputHandler, UIManager, StorageManager
-- `game.test.js` - 151 unit tests
-- `styles.css` - Glassmorphism UI design system with `--ui-*` tokens
-- `openspec/changes/add-extended-input/` - Scaffolded proposal for D-pad, tap zones, gamepad
-- `CLAUDE.md` - Project conventions and workflow instructions
+- `game.js` - All game code (~1300 lines): Game, Snake, Food, Renderer, InputHandler, UIManager, StorageManager
+- `game.test.js` - 170 unit tests
+- `styles.css` - Glassmorphism UI with `--ui-*` tokens, `--ui-gold` celebration tokens
+- `openspec/changes/add-extended-input/` - Scaffolded proposal (D-pad, tap zones, gamepad)
+- `.ai/MAESTRO-LOG.md` - Detailed execution log from leaderboard orchestration
 
 ## Context
 - Single-file architecture (game.js), no build step
-- 6 openspec proposals remain: add-extended-input, add-theme-system, add-difficulty-system, add-audio-system, add-leaderboard, add-accessibility
-- Maestro orchestration files in `.ai/MAESTRO.md` and `.ai/MAESTRO-LOG.md` (from ui-screens)
+- 5 openspec proposals remain: add-extended-input, add-theme-system, add-difficulty-system, add-audio-system, add-accessibility
+- Leaderboard used data-ui overlays (not new GameState) — pattern established for future modals
+- inputGate blocks direction input only; action keys (ESC, space) always fire through overlays
 - GitHub project board: N3SSQwiK/projects/4
 
 ## Suggested Prompt
-> The `add-extended-input` proposal is already scaffolded with specs and tasks (D-pad, tap zones, PlayStation gamepad via Gamepad API). Run `/maestro plan Implement add-extended-input proposal` to orchestrate, or pick a different proposal like `add-theme-system` or `add-difficulty-system`. Use `openspec list` to see all remaining proposals.
+> PR #37 (add-leaderboard) is open — merge it first. Then pick the next proposal: `add-extended-input` is scaffolded (D-pad, tap zones, gamepad), or `add-theme-system` / `add-difficulty-system` for core gameplay features. Run `/maestro plan Implement add-<proposal>` to orchestrate. After merging, run `openspec archive add-leaderboard` and `gh issue close 26 --comment "Implemented and archived"`.
 
 ## Source
-Claude Code | 2026-01-29 03:42 UTC
+Claude Code | 2026-01-29 22:09 UTC
