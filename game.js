@@ -339,6 +339,7 @@ class Snake {
         this.body = [];
         this.direction = Direction.RIGHT;
         this.pendingGrowth = 0;
+        this.previousBody = null;
 
         // Build initial body from head (startX, startY) extending left
         for (let i = 0; i < initialLength; i++) {
@@ -361,6 +362,7 @@ class Snake {
     }
 
     move() {
+        this.previousBody = this.body.map(s => ({ x: s.x, y: s.y }));
         const head = this.body[0];
         let newHead;
 
@@ -418,6 +420,7 @@ class Snake {
         this.body = [];
         this.direction = Direction.RIGHT;
         this.pendingGrowth = 0;
+        this.previousBody = null;
 
         for (let i = 0; i < initialLength; i++) {
             this.body.push({ x: startX - i, y: startY });
@@ -600,9 +603,24 @@ class Renderer {
         return `rgb(${r}, ${g}, ${b})`;
     }
 
-    drawSnake(snake) {
+    _interpSegment(prev, curr, factor) {
+        // No previous position (growth frame) — snap to grid
+        if (!prev) return { x: curr.x, y: curr.y };
+        // Wrap-around detection: delta > 1 cell means it wrapped
+        if (Math.abs(prev.x - curr.x) > 1 || Math.abs(prev.y - curr.y) > 1) {
+            return { x: curr.x, y: curr.y };
+        }
+        return {
+            x: prev.x + (curr.x - prev.x) * factor,
+            y: prev.y + (curr.y - prev.y) * factor
+        };
+    }
+
+    drawSnake(snake, interpFactor = 0) {
         const colors = this.theme.colors;
         const bodyLength = snake.body.length;
+        const prevBody = snake.previousBody;
+        const useInterp = interpFactor > 0 && prevBody;
 
         // Enable glow effect for the entire snake
         this.ctx.shadowColor = colors.snakeGlow || 'rgba(16, 185, 129, 0.4)';
@@ -611,6 +629,9 @@ class Renderer {
         // Draw body segments (tail to head) with gradient coloring
         for (let i = bodyLength - 1; i > 0; i--) {
             const segment = snake.body[i];
+            const pos = useInterp
+                ? this._interpSegment(prevBody[i], segment, interpFactor)
+                : segment;
 
             // Calculate gradient: head color (0) -> tail color (1)
             const t = i / (bodyLength - 1);
@@ -621,8 +642,8 @@ class Renderer {
             const padding = 1;
             const radius = 4;
             this.drawRoundedRect(
-                segment.x * CELL_SIZE + padding,
-                segment.y * CELL_SIZE + padding,
+                pos.x * CELL_SIZE + padding,
+                pos.y * CELL_SIZE + padding,
                 CELL_SIZE - padding * 2,
                 CELL_SIZE - padding * 2,
                 radius,
@@ -632,12 +653,15 @@ class Renderer {
 
         // Draw head with more prominent rounding
         const head = snake.body[0];
+        const headPos = useInterp
+            ? this._interpSegment(prevBody[0], head, interpFactor)
+            : head;
         const headPadding = 1;
         const headRadius = 6;
 
         this.drawRoundedRect(
-            head.x * CELL_SIZE + headPadding,
-            head.y * CELL_SIZE + headPadding,
+            headPos.x * CELL_SIZE + headPadding,
+            headPos.y * CELL_SIZE + headPadding,
             CELL_SIZE - headPadding * 2,
             CELL_SIZE - headPadding * 2,
             headRadius,
@@ -648,7 +672,7 @@ class Renderer {
         this.ctx.shadowBlur = 0;
 
         // Draw eyes based on direction
-        this.drawSnakeEyes(head, snake.direction, colors.snakeEyes || 'rgba(255, 255, 255, 0.9)');
+        this.drawSnakeEyes(headPos, snake.direction, colors.snakeEyes || 'rgba(255, 255, 255, 0.9)');
     }
 
     drawSnakeEyes(head, direction, eyeColor) {
@@ -972,6 +996,7 @@ class UIManager {
         this.initialsMobileInput = document.getElementById('initials-mobile-input');
         this.leaderboardBody = document.getElementById('leaderboard-body');
         this.wallToggle = document.getElementById('wall-collision-toggle');
+        this.animationToggle = document.getElementById('animation-style-toggle');
 
         // Initials entry state
         this._initialsChars = [0, 0, 0]; // A=0, B=1, ... Z=25
@@ -980,9 +1005,11 @@ class UIManager {
         this._initialsStorage = null;
         this._initialsKeyHandler = null;
 
-        // Sync toggle with stored value on init (HTML hardcodes true)
+        // Sync toggles with stored values on init (HTML hardcodes true)
         this.wallToggle.setAttribute('aria-checked',
             String(this.game.wallCollisionEnabled));
+        this.animationToggle.setAttribute('aria-checked',
+            String(this.game.animationStyle === 'smooth'));
 
         // Event delegation on overlay
         this.handleOverlayClick = this.handleOverlayClick.bind(this);
@@ -996,9 +1023,11 @@ class UIManager {
     }
 
     showSettings() {
-        // Sync toggle with current value
+        // Sync toggles with current values
         this.wallToggle.setAttribute('aria-checked',
             String(this.game.wallCollisionEnabled));
+        this.animationToggle.setAttribute('aria-checked',
+            String(this.game.animationStyle === 'smooth'));
 
         this.renderThemePicker();
         this.container.setAttribute('data-ui', 'settings');
@@ -1310,6 +1339,12 @@ class UIManager {
                 this.wallToggle.setAttribute('aria-checked', String(newVal));
                 break;
             }
+            case 'toggle-animation-style': {
+                const newStyle = this.game.animationStyle === 'smooth' ? 'classic' : 'smooth';
+                this.game.setAnimationStyle(newStyle);
+                this.animationToggle.setAttribute('aria-checked', String(newStyle === 'smooth'));
+                break;
+            }
             case 'settings-back':
                 this.hideSettings();
                 break;
@@ -1367,6 +1402,9 @@ class Game {
 
         // Wall collision setting (true = GAMEOVER on wall hit, false = wrap-around)
         this.wallCollisionEnabled = this.storage.get('wallCollision', true);
+
+        // Animation style setting
+        this.animationStyle = this.storage.get('animationStyle', 'smooth');
 
         // Load saved theme
         this.currentTheme = this.storage.get('theme', 'classic');
@@ -1436,6 +1474,11 @@ class Game {
     setWallCollision(enabled) {
         this.wallCollisionEnabled = enabled;
         this.storage.set('wallCollision', enabled);
+    }
+
+    setAnimationStyle(style) {
+        this.animationStyle = style;
+        this.storage.set('animationStyle', style);
     }
 
     applyTheme(themeName) {
@@ -1569,7 +1612,12 @@ class Game {
         // Draw game elements when playing, paused, or game over
         if (this.state === GameState.PLAYING || this.state === GameState.PAUSED || this.state === GameState.GAMEOVER) {
             this.renderer.drawGrid();
-            this.renderer.drawSnake(this.snake);
+
+            // Calculate interpolation factor for smooth animation
+            const interpFactor = this.animationStyle === 'smooth'
+                ? Math.min(this.tickAccumulator / this.tickInterval, 1.0)
+                : 0;
+            this.renderer.drawSnake(this.snake, interpFactor);
 
             // Draw food (only when playing or paused)
             if (this.state !== GameState.GAMEOVER) {
