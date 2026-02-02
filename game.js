@@ -78,7 +78,7 @@ const THEMES = {
             snakeHead: '#94a3b8',
             snakeTail: '#64748b',
             snakeGlow: 'rgba(148, 163, 184, 0.25)',
-            snakeEyes: 'rgba(226, 232, 240, 0.85)',
+            snakeEyes: 'rgba(15, 23, 42, 0.85)',
             food: '#c2614b',
             bonusFood: '#d4915e',
             poisonFood: '#8b6caf',
@@ -113,7 +113,7 @@ const THEMES = {
             snakeHead: '#1b4332',
             snakeTail: '#40916c',
             snakeGlow: 'rgba(45, 106, 79, 0.25)',
-            snakeEyes: 'rgba(27, 67, 50, 0.9)',
+            snakeEyes: 'rgba(255, 255, 255, 0.9)',
             food: '#c1453b',
             bonusFood: '#c77a2e',
             poisonFood: '#7b4d9e',
@@ -148,7 +148,7 @@ const THEMES = {
             snakeHead: '#e09940',
             snakeTail: '#b87330',
             snakeGlow: 'rgba(212, 136, 58, 0.35)',
-            snakeEyes: 'rgba(255, 230, 180, 0.9)',
+            snakeEyes: 'rgba(60, 30, 0, 0.9)',
             food: '#c94545',
             bonusFood: '#e6c84d',
             poisonFood: '#8a5eb5',
@@ -339,6 +339,7 @@ class Snake {
         this.body = [];
         this.direction = Direction.RIGHT;
         this.pendingGrowth = 0;
+        this.previousBody = null;
 
         // Build initial body from head (startX, startY) extending left
         for (let i = 0; i < initialLength; i++) {
@@ -361,6 +362,7 @@ class Snake {
     }
 
     move() {
+        this.previousBody = this.body.map(s => ({ x: s.x, y: s.y }));
         const head = this.body[0];
         let newHead;
 
@@ -418,6 +420,7 @@ class Snake {
         this.body = [];
         this.direction = Direction.RIGHT;
         this.pendingGrowth = 0;
+        this.previousBody = null;
 
         for (let i = 0; i < initialLength; i++) {
             this.body.push({ x: startX - i, y: startY });
@@ -600,9 +603,24 @@ class Renderer {
         return `rgb(${r}, ${g}, ${b})`;
     }
 
-    drawSnake(snake) {
+    _interpSegment(prev, curr, factor) {
+        // No previous position (growth frame) — snap to grid
+        if (!prev) return { x: curr.x, y: curr.y };
+        // Wrap-around detection: delta > 1 cell means it wrapped
+        if (Math.abs(prev.x - curr.x) > 1 || Math.abs(prev.y - curr.y) > 1) {
+            return { x: curr.x, y: curr.y };
+        }
+        return {
+            x: prev.x + (curr.x - prev.x) * factor,
+            y: prev.y + (curr.y - prev.y) * factor
+        };
+    }
+
+    drawSnake(snake, interpFactor = 0) {
         const colors = this.theme.colors;
         const bodyLength = snake.body.length;
+        const prevBody = snake.previousBody;
+        const useInterp = interpFactor > 0 && prevBody;
 
         // Enable glow effect for the entire snake
         this.ctx.shadowColor = colors.snakeGlow || 'rgba(16, 185, 129, 0.4)';
@@ -611,6 +629,9 @@ class Renderer {
         // Draw body segments (tail to head) with gradient coloring
         for (let i = bodyLength - 1; i > 0; i--) {
             const segment = snake.body[i];
+            const pos = useInterp
+                ? this._interpSegment(prevBody[i], segment, interpFactor)
+                : segment;
 
             // Calculate gradient: head color (0) -> tail color (1)
             const t = i / (bodyLength - 1);
@@ -621,8 +642,8 @@ class Renderer {
             const padding = 1;
             const radius = 4;
             this.drawRoundedRect(
-                segment.x * CELL_SIZE + padding,
-                segment.y * CELL_SIZE + padding,
+                pos.x * CELL_SIZE + padding,
+                pos.y * CELL_SIZE + padding,
                 CELL_SIZE - padding * 2,
                 CELL_SIZE - padding * 2,
                 radius,
@@ -630,14 +651,15 @@ class Renderer {
             );
         }
 
-        // Draw head with more prominent rounding
+        // Draw head at grid position (no interpolation — avoids jitter on the focal point)
         const head = snake.body[0];
+        const headPos = head;
         const headPadding = 1;
         const headRadius = 6;
 
         this.drawRoundedRect(
-            head.x * CELL_SIZE + headPadding,
-            head.y * CELL_SIZE + headPadding,
+            headPos.x * CELL_SIZE + headPadding,
+            headPos.y * CELL_SIZE + headPadding,
             CELL_SIZE - headPadding * 2,
             CELL_SIZE - headPadding * 2,
             headRadius,
@@ -648,7 +670,7 @@ class Renderer {
         this.ctx.shadowBlur = 0;
 
         // Draw eyes based on direction
-        this.drawSnakeEyes(head, snake.direction, colors.snakeEyes || 'rgba(255, 255, 255, 0.9)');
+        this.drawSnakeEyes(headPos, snake.direction, colors.snakeEyes || 'rgba(255, 255, 255, 0.9)');
     }
 
     drawSnakeEyes(head, direction, eyeColor) {
@@ -972,6 +994,7 @@ class UIManager {
         this.initialsMobileInput = document.getElementById('initials-mobile-input');
         this.leaderboardBody = document.getElementById('leaderboard-body');
         this.wallToggle = document.getElementById('wall-collision-toggle');
+        this.animationToggle = document.getElementById('animation-style-toggle');
 
         // Initials entry state
         this._initialsChars = [0, 0, 0]; // A=0, B=1, ... Z=25
@@ -980,9 +1003,11 @@ class UIManager {
         this._initialsStorage = null;
         this._initialsKeyHandler = null;
 
-        // Sync toggle with stored value on init (HTML hardcodes true)
+        // Sync toggles with stored values on init (HTML hardcodes true)
         this.wallToggle.setAttribute('aria-checked',
             String(this.game.wallCollisionEnabled));
+        this.animationToggle.setAttribute('aria-checked',
+            String(this.game.animationStyle === 'smooth'));
 
         // Event delegation on overlay
         this.handleOverlayClick = this.handleOverlayClick.bind(this);
@@ -996,12 +1021,24 @@ class UIManager {
     }
 
     showSettings() {
-        // Sync toggle with current value
+        // Sync toggles with current values
         this.wallToggle.setAttribute('aria-checked',
             String(this.game.wallCollisionEnabled));
+        this.animationToggle.setAttribute('aria-checked',
+            String(this.game.animationStyle === 'smooth'));
 
         this.renderThemePicker();
         this.container.setAttribute('data-ui', 'settings');
+
+        // Scroll settings screen to top after layout renders
+        requestAnimationFrame(() => {
+            const settingsScreen = this.container.querySelector('.screen-settings');
+            if (settingsScreen) {
+                settingsScreen.scrollTop = 0;
+                const panel = settingsScreen.querySelector('.ui-panel');
+                if (panel) panel.scrollTop = 0;
+            }
+        });
     }
 
     renderThemePicker() {
@@ -1137,7 +1174,24 @@ class UIManager {
                 }
                 e.target.value = '';
             };
-            this._initialsSlotTapHandler = () => {
+            this._initialsMobileKeydownHandler = (e) => {
+                if (e.key === 'Backspace') {
+                    e.preventDefault();
+                    this._initialsChars[this._initialsIndex] = 0;
+                    if (this._initialsIndex > 0) {
+                        this._initialsIndex--;
+                    }
+                    this._renderInitialsSlots();
+                }
+            };
+            this.initialsMobileInput.addEventListener('keydown', this._initialsMobileKeydownHandler);
+            this._initialsSlotTapHandler = (e) => {
+                const slot = e.currentTarget;
+                const index = Array.from(this.initialsSlots).indexOf(slot);
+                if (index !== -1) {
+                    this._initialsIndex = index;
+                    this._renderInitialsSlots();
+                }
                 this.initialsMobileInput.focus();
             };
             this.initialsMobileInput.addEventListener('input', this._initialsMobileInputHandler);
@@ -1157,6 +1211,10 @@ class UIManager {
         if (this.initialsMobileInput && this._initialsMobileInputHandler) {
             this.initialsMobileInput.removeEventListener('input', this._initialsMobileInputHandler);
             this._initialsMobileInputHandler = null;
+            if (this._initialsMobileKeydownHandler) {
+                this.initialsMobileInput.removeEventListener('keydown', this._initialsMobileKeydownHandler);
+                this._initialsMobileKeydownHandler = null;
+            }
             this.initialsMobileInput.blur();
         }
         if (this._initialsSlotTapHandler) {
@@ -1198,6 +1256,12 @@ class UIManager {
             this._submitInitials();
         } else if (key === 'Escape') {
             this.hideInitials();
+        } else if (key === 'Backspace') {
+            this._initialsChars[this._initialsIndex] = 0;
+            if (this._initialsIndex > 0) {
+                this._initialsIndex--;
+            }
+            this._renderInitialsSlots();
         } else if (/^[a-zA-Z]$/.test(key)) {
             this._initialsChars[this._initialsIndex] = key.toUpperCase().charCodeAt(0) - 65;
             if (this._initialsIndex < 2) {
@@ -1310,6 +1374,12 @@ class UIManager {
                 this.wallToggle.setAttribute('aria-checked', String(newVal));
                 break;
             }
+            case 'toggle-animation-style': {
+                const newStyle = this.game.animationStyle === 'smooth' ? 'classic' : 'smooth';
+                this.game.setAnimationStyle(newStyle);
+                this.animationToggle.setAttribute('aria-checked', String(newStyle === 'smooth'));
+                break;
+            }
             case 'settings-back':
                 this.hideSettings();
                 break;
@@ -1367,6 +1437,9 @@ class Game {
 
         // Wall collision setting (true = GAMEOVER on wall hit, false = wrap-around)
         this.wallCollisionEnabled = this.storage.get('wallCollision', true);
+
+        // Animation style setting
+        this.animationStyle = this.storage.get('animationStyle', 'smooth');
 
         // Load saved theme
         this.currentTheme = this.storage.get('theme', 'classic');
@@ -1438,6 +1511,11 @@ class Game {
         this.storage.set('wallCollision', enabled);
     }
 
+    setAnimationStyle(style) {
+        this.animationStyle = style;
+        this.storage.set('animationStyle', style);
+    }
+
     applyTheme(themeName) {
         const theme = THEMES[themeName];
         if (!theme) return;
@@ -1491,12 +1569,13 @@ class Game {
         this.lastTime = currentTime;
 
         // Accumulate time for fixed-step game logic
-        this.tickAccumulator += deltaTime;
+        // Cap delta to avoid spiral of death after tab-away or GC pause
+        this.tickAccumulator += Math.min(deltaTime, this.tickInterval);
 
-        // Run game ticks at fixed rate
-        while (this.tickAccumulator >= this.tickInterval) {
+        // Run game tick when interval elapsed, reset accumulator for clean 0→1 alpha
+        if (this.tickAccumulator >= this.tickInterval) {
             this.tick();
-            this.tickAccumulator -= this.tickInterval;
+            this.tickAccumulator = 0;
         }
 
         // Render every frame
@@ -1569,7 +1648,12 @@ class Game {
         // Draw game elements when playing, paused, or game over
         if (this.state === GameState.PLAYING || this.state === GameState.PAUSED || this.state === GameState.GAMEOVER) {
             this.renderer.drawGrid();
-            this.renderer.drawSnake(this.snake);
+
+            // Calculate interpolation factor for smooth animation
+            const interpFactor = this.animationStyle === 'smooth'
+                ? Math.min(this.tickAccumulator / this.tickInterval, 1.0)
+                : 0;
+            this.renderer.drawSnake(this.snake, interpFactor);
 
             // Draw food (only when playing or paused)
             if (this.state !== GameState.GAMEOVER) {

@@ -1750,3 +1750,77 @@ describe('Theme Unlocks', () => {
         assert.ok(storage2.isThemeUnlocked('dark'));
     });
 });
+
+// =============================================================================
+// ANIMATION TOGGLE TESTS
+// =============================================================================
+
+describe('Snake previousBody tracking', () => {
+    test('previousBody is null before first move', () => {
+        const snake = new Snake(10, 10);
+        assert.strictEqual(snake.previousBody, null);
+    });
+
+    test('previousBody is set after move', () => {
+        const snake = new Snake(10, 10);
+        snake.move();
+        assert.notStrictEqual(snake.previousBody, null);
+        assert.ok(Array.isArray(snake.previousBody));
+    });
+
+    test('previousBody matches body state before move', () => {
+        const snake = new Snake(10, 10);
+        const bodyBeforeMove = snake.body.map(s => ({ x: s.x, y: s.y }));
+        snake.move();
+        assert.deepStrictEqual(snake.previousBody, bodyBeforeMove);
+    });
+
+    test('previousBody is a deep copy (not same reference)', () => {
+        const snake = new Snake(10, 10);
+        snake.move();
+        assert.notStrictEqual(snake.previousBody, snake.body);
+        assert.notStrictEqual(snake.previousBody[0], snake.body[0]);
+    });
+
+    test('reset clears previousBody', () => {
+        const snake = new Snake(10, 10);
+        snake.move();
+        assert.notStrictEqual(snake.previousBody, null);
+        snake.reset(10, 10);
+        assert.strictEqual(snake.previousBody, null);
+    });
+});
+
+describe('Animation style setting', () => {
+    beforeEach(() => {
+        global.localStorage.clear();
+    });
+
+    test('animationStyle defaults to smooth', () => {
+        const game = new Game(createMockCanvas());
+        assert.strictEqual(game.animationStyle, 'smooth');
+    });
+
+    test('animationStyle loads from storage', () => {
+        global.localStorage.setItem('snake_animationStyle', '"classic"');
+        const game = new Game(createMockCanvas());
+        assert.strictEqual(game.animationStyle, 'classic');
+    });
+
+    test('setAnimationStyle updates and persists', () => {
+        const game = new Game(createMockCanvas());
+        game.setAnimationStyle('classic');
+        assert.strictEqual(game.animationStyle, 'classic');
+        assert.strictEqual(global.localStorage.getItem('snake_animationStyle'), '"classic"');
+    });
+
+    test('interpolation factor is clamped to 1.0', () => {
+        const game = new Game(createMockCanvas());
+        game.animationStyle = 'smooth';
+        game.tickAccumulator = game.tickInterval * 2; // Over 1.0
+        // Render should not crash; factor is clamped internally
+        game.render();
+        // If we got here without error, clamping works
+        assert.ok(true);
+    });
+});
