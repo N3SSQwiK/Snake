@@ -2,8 +2,8 @@
 // CONSTANTS
 // =============================================================================
 
-const GRID_WIDTH = 20;
-const GRID_HEIGHT = 20;
+const GRID_WIDTH = 25;
+const GRID_HEIGHT = 25;
 const CELL_SIZE = 20;
 
 const CANVAS_WIDTH = GRID_WIDTH * CELL_SIZE;
@@ -31,6 +31,63 @@ const FOOD_POINTS = 10;
 const FOOD_DECAY_TICKS = 100;              // 10s at 10Hz
 const FOOD_DECAY_WARNING_THRESHOLD = 0.25; // Blink at <25%
 const FOOD_MAX_SPAWN_ATTEMPTS = 100;
+
+// Food types
+const FoodType = {
+    REGULAR: 'regular',
+    BONUS: 'bonus',
+    TOXIC: 'toxic',
+    LETHAL: 'lethal'
+};
+
+// Special food timer (ticks before despawn)
+const SPECIAL_FOOD_TICKS = 60; // 6s at 10Hz
+
+// Difficulty levels
+const DIFFICULTY_LEVELS = {
+    easy: {
+        name: 'Easy',
+        description: 'Walls wrap, no hazard food',
+        baseTickRate: 8,
+        maxTickRate: 14,
+        speedScoreStep: 80,
+        bonusFoodChance: 0.15,
+        toxicFoodChance: 0.0,
+        lethalFoodChance: 0.0,
+        wallCollision: false,
+        hazardProximity: null,
+        toxicSegmentBase: 0,
+        toxicSegmentDivisor: 0
+    },
+    medium: {
+        name: 'Medium',
+        description: 'Walls kill, toxic food appears',
+        baseTickRate: 10,
+        maxTickRate: 18,
+        speedScoreStep: 50,
+        bonusFoodChance: 0.12,
+        toxicFoodChance: 0.08,
+        lethalFoodChance: 0.0,
+        wallCollision: true,
+        hazardProximity: { min: 4, max: 6 },
+        toxicSegmentBase: 1,
+        toxicSegmentDivisor: 10
+    },
+    hard: {
+        name: 'Hard',
+        description: 'Walls kill, toxic and lethal food',
+        baseTickRate: 12,
+        maxTickRate: 22,
+        speedScoreStep: 30,
+        bonusFoodChance: 0.10,
+        toxicFoodChance: 0.12,
+        lethalFoodChance: 0.06,
+        wallCollision: true,
+        hazardProximity: { min: 1, max: 2 },
+        toxicSegmentBase: 2,
+        toxicSegmentDivisor: 5
+    }
+};
 
 // Theme definitions
 const THEMES = {
@@ -250,31 +307,39 @@ class StorageManager {
         }
     }
 
-    getLeaderboard() {
-        return this.get('leaderboard', []);
+    getLeaderboard(difficulty) {
+        const board = this.get('leaderboard', []);
+        if (!difficulty) return board;
+        return board.filter(e => e.difficulty === difficulty || !e.difficulty);
     }
 
-    addScore(initials, score) {
+    addScore(initials, score, difficulty) {
         const sanitized = String(initials).toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) || 'AAA';
         const validScore = typeof score === 'number' && score >= 0 ? Math.floor(score) : 0;
         const entry = {
             initials: sanitized,
             score: validScore,
+            difficulty: difficulty || undefined,
             timestamp: Date.now()
         };
-        const board = this.getLeaderboard();
-        board.push(entry);
-        board.sort((a, b) => b.score - a.score || a.timestamp - b.timestamp);
-        this.set('leaderboard', board.slice(0, 10));
+        // Store all entries together, cap at 10 per difficulty
+        const allEntries = this.get('leaderboard', []);
+        allEntries.push(entry);
+        allEntries.sort((a, b) =>
+            b.score - a.score ||
+            (DIFFICULTY_RANKS[b.difficulty] || 0) - (DIFFICULTY_RANKS[a.difficulty] || 0) ||
+            a.timestamp - b.timestamp
+        );
+        this.set('leaderboard', allEntries.slice(0, 50));
     }
 
-    isHighScore(score) {
-        const board = this.getLeaderboard();
+    isHighScore(score, difficulty) {
+        const board = this.getLeaderboard(difficulty).slice(0, 10);
         return board.length < 10 || score > board[board.length - 1].score;
     }
 
-    isNewTopScore(score) {
-        const board = this.getLeaderboard();
+    isNewTopScore(score, difficulty) {
+        const board = this.getLeaderboard(difficulty);
         return board.length === 0 || score > board[0].score;
     }
 
@@ -396,6 +461,19 @@ class Snake {
         this.pendingGrowth += amount;
     }
 
+    removeSegments(count) {
+        const maxRemovable = this.body.length - 1;
+        const actualRemoved = Math.min(count, maxRemovable);
+        if (actualRemoved > 0) {
+            this.body.splice(-actualRemoved);
+        }
+        // Also reduce pending growth
+        if (this.pendingGrowth > 0) {
+            this.pendingGrowth = Math.max(0, this.pendingGrowth - count);
+        }
+        return actualRemoved;
+    }
+
     checkSelfCollision() {
         const head = this.body[0];
 
@@ -440,9 +518,16 @@ class Food {
         this.position = null;
         this.points = FOOD_POINTS;
         this.spawnTick = null;
+        this.foodType = FoodType.REGULAR;
     }
 
-    spawn(excludePositions, currentTick) {
+    spawn(excludePositions, currentTick, foodType = FoodType.REGULAR, decayOverride = null) {
+        this.foodType = foodType;
+        if (decayOverride !== null) {
+            this.decayTicks = decayOverride;
+        } else {
+            this.decayTicks = FOOD_DECAY_TICKS;
+        }
         // Try random positions first
         for (let attempt = 0; attempt < FOOD_MAX_SPAWN_ATTEMPTS; attempt++) {
             const x = Math.floor(Math.random() * this.gridWidth);
@@ -479,6 +564,32 @@ class Food {
         return false;
     }
 
+    spawnNearTarget(targetPos, minDist, maxDist, excludePositions, currentTick, foodType = FoodType.REGULAR, decayOverride = null) {
+        this.foodType = foodType;
+        this.decayTicks = decayOverride !== null ? decayOverride : FOOD_DECAY_TICKS;
+
+        const validPositions = [];
+        for (let x = 0; x < this.gridWidth; x++) {
+            for (let y = 0; y < this.gridHeight; y++) {
+                if (this._isPositionOccupied(x, y, excludePositions)) continue;
+                const dist = Math.abs(x - targetPos.x) + Math.abs(y - targetPos.y);
+                if (dist >= minDist && dist <= maxDist) {
+                    validPositions.push({ x, y });
+                }
+            }
+        }
+
+        if (validPositions.length > 0) {
+            this.position = validPositions[Math.floor(Math.random() * validPositions.length)];
+            this.spawnTick = currentTick;
+            return true;
+        }
+
+        this.position = null;
+        this.spawnTick = null;
+        return false;
+    }
+
     _isPositionOccupied(x, y, excludePositions) {
         return excludePositions.some(pos => pos.x === x && pos.y === y);
     }
@@ -508,6 +619,7 @@ class Food {
     reset() {
         this.position = null;
         this.spawnTick = null;
+        this.foodType = FoodType.REGULAR;
     }
 }
 
@@ -729,6 +841,23 @@ class Renderer {
             return;
         }
 
+        switch (food.foodType) {
+            case FoodType.BONUS:
+                this._drawBonusFood(food, currentTick);
+                break;
+            case FoodType.TOXIC:
+                this._drawToxicFood(food, currentTick);
+                break;
+            case FoodType.LETHAL:
+                this._drawLethalFood(food, currentTick);
+                break;
+            default:
+                this._drawRegularFood(food);
+                break;
+        }
+    }
+
+    _drawRegularFood(food) {
         const x = food.position.x * CELL_SIZE;
         const y = food.position.y * CELL_SIZE;
         const size = CELL_SIZE;
@@ -741,35 +870,18 @@ class Renderer {
         this.ctx.fillStyle = this.theme.colors.food;
         this.ctx.beginPath();
 
-        // Apple shape using bezier curves
-        // Start at top center indent
         const centerX = x + size / 2;
         const topY = y + 4;
         const bottomY = y + size - 2;
         const leftX = x + 2;
         const rightX = x + size - 2;
 
-        // Top indent
         this.ctx.moveTo(centerX, topY + 2);
-
-        // Left curve (top to bottom)
-        this.ctx.bezierCurveTo(
-            leftX - 1, topY + 2,      // control point 1
-            leftX, bottomY - 4,        // control point 2
-            centerX, bottomY           // end point (bottom center)
-        );
-
-        // Right curve (bottom to top)
-        this.ctx.bezierCurveTo(
-            rightX, bottomY - 4,       // control point 1
-            rightX + 1, topY + 2,      // control point 2
-            centerX, topY + 2          // end point (back to top)
-        );
-
+        this.ctx.bezierCurveTo(leftX - 1, topY + 2, leftX, bottomY - 4, centerX, bottomY);
+        this.ctx.bezierCurveTo(rightX, bottomY - 4, rightX + 1, topY + 2, centerX, topY + 2);
         this.ctx.closePath();
         this.ctx.fill();
 
-        // Reset shadow for stem and leaf
         this.ctx.shadowBlur = 0;
 
         // Draw stem
@@ -788,20 +900,127 @@ class Renderer {
         this.ctx.fill();
     }
 
-    drawScore(score, length) {
-        // Set text properties
-        this.ctx.font = '14px monospace';
-        this.ctx.textAlign = 'left';
-        this.ctx.textBaseline = 'top';
+    _drawBonusFood(food, currentTick) {
+        const x = food.position.x * CELL_SIZE;
+        const y = food.position.y * CELL_SIZE;
+        const size = CELL_SIZE;
+        const cx = x + size / 2;
+        const cy = y + size / 2;
 
-        // Draw shadow for readability
-        this.ctx.fillStyle = this.theme.colors.scoreShadow || 'rgba(0, 0, 0, 0.7)';
-        this.ctx.fillText(`Score: ${score}  Length: ${length}`, 11, 11);
+        // Subtle rotation pulse
+        const pulse = 1 + 0.08 * Math.sin(currentTick * 0.3);
 
-        // Draw text
-        this.ctx.fillStyle = this.theme.colors.scoreText || '#ffffff';
-        this.ctx.fillText(`Score: ${score}  Length: ${length}`, 10, 10);
+        this.ctx.shadowColor = this.theme.colors.bonusFood;
+        this.ctx.shadowBlur = 10;
+        this.ctx.fillStyle = this.theme.colors.bonusFood;
+
+        // 4-pointed star shape
+        this.ctx.beginPath();
+        const outerR = (size / 2 - 2) * pulse;
+        const innerR = outerR * 0.4;
+        for (let i = 0; i < 8; i++) {
+            const angle = (Math.PI / 4) * i - Math.PI / 2;
+            const r = i % 2 === 0 ? outerR : innerR;
+            const px = cx + Math.cos(angle) * r;
+            const py = cy + Math.sin(angle) * r;
+            if (i === 0) this.ctx.moveTo(px, py);
+            else this.ctx.lineTo(px, py);
+        }
+        this.ctx.closePath();
+        this.ctx.fill();
+        this.ctx.shadowBlur = 0;
     }
+
+    _drawToxicFood(food, currentTick) {
+        const x = food.position.x * CELL_SIZE;
+        const y = food.position.y * CELL_SIZE;
+        const size = CELL_SIZE;
+        const cx = x + size / 2;
+        const cy = y + size / 2;
+
+        this.ctx.shadowColor = this.theme.colors.poisonFood;
+        this.ctx.shadowBlur = 8;
+        this.ctx.fillStyle = this.theme.colors.poisonFood;
+
+        // Diamond/warning shape
+        const r = size / 2 - 2;
+        this.ctx.beginPath();
+        this.ctx.moveTo(cx, cy - r);       // top
+        this.ctx.lineTo(cx + r, cy);       // right
+        this.ctx.lineTo(cx, cy + r);       // bottom
+        this.ctx.lineTo(cx - r, cy);       // left
+        this.ctx.closePath();
+        this.ctx.fill();
+
+        this.ctx.shadowBlur = 0;
+
+        // Exclamation mark
+        this.ctx.fillStyle = this.theme.colors.background;
+        this.ctx.fillRect(cx - 1.5, cy - 5, 3, 6);
+        this.ctx.beginPath();
+        this.ctx.arc(cx, cy + 4, 1.5, 0, Math.PI * 2);
+        this.ctx.fill();
+    }
+
+    _drawLethalFood(food, currentTick) {
+        const x = food.position.x * CELL_SIZE;
+        const y = food.position.y * CELL_SIZE;
+        const size = CELL_SIZE;
+        const cx = x + size / 2;
+        const cy = y + size / 2;
+
+        // Pulsing danger
+        const pulse = 0.85 + 0.15 * Math.sin(currentTick * 0.5);
+
+        this.ctx.shadowColor = this.theme.colors.poisonFood;
+        this.ctx.shadowBlur = 12;
+        this.ctx.fillStyle = this.theme.colors.poisonFood;
+
+        // Spiky circle (8 points)
+        const outerR = (size / 2 - 1) * pulse;
+        const innerR = outerR * 0.65;
+        this.ctx.beginPath();
+        for (let i = 0; i < 16; i++) {
+            const angle = (Math.PI / 8) * i - Math.PI / 2;
+            const r = i % 2 === 0 ? outerR : innerR;
+            const px = cx + Math.cos(angle) * r;
+            const py = cy + Math.sin(angle) * r;
+            if (i === 0) this.ctx.moveTo(px, py);
+            else this.ctx.lineTo(px, py);
+        }
+        this.ctx.closePath();
+        this.ctx.fill();
+
+        this.ctx.shadowBlur = 0;
+
+        // Skull: X eyes and line mouth
+        this.ctx.strokeStyle = this.theme.colors.background;
+        this.ctx.lineWidth = 1.5;
+        this.ctx.lineCap = 'round';
+
+        // Left eye X
+        this.ctx.beginPath();
+        this.ctx.moveTo(cx - 4, cy - 3);
+        this.ctx.lineTo(cx - 1, cy);
+        this.ctx.moveTo(cx - 1, cy - 3);
+        this.ctx.lineTo(cx - 4, cy);
+        this.ctx.stroke();
+
+        // Right eye X
+        this.ctx.beginPath();
+        this.ctx.moveTo(cx + 1, cy - 3);
+        this.ctx.lineTo(cx + 4, cy);
+        this.ctx.moveTo(cx + 4, cy - 3);
+        this.ctx.lineTo(cx + 1, cy);
+        this.ctx.stroke();
+
+        // Mouth
+        this.ctx.beginPath();
+        this.ctx.moveTo(cx - 3, cy + 3);
+        this.ctx.lineTo(cx + 3, cy + 3);
+        this.ctx.stroke();
+    }
+
 }
 
 // =============================================================================
@@ -993,8 +1212,8 @@ class UIManager {
         this.initialsSlots = container.querySelectorAll('.initials-slot');
         this.initialsMobileInput = document.getElementById('initials-mobile-input');
         this.leaderboardBody = document.getElementById('leaderboard-body');
-        this.wallToggle = document.getElementById('wall-collision-toggle');
         this.animationToggle = document.getElementById('animation-style-toggle');
+        this.difficultySelector = document.getElementById('difficulty-selector');
 
         // Initials entry state
         this._initialsChars = [0, 0, 0]; // A=0, B=1, ... Z=25
@@ -1003,11 +1222,10 @@ class UIManager {
         this._initialsStorage = null;
         this._initialsKeyHandler = null;
 
-        // Sync toggles with stored values on init (HTML hardcodes true)
-        this.wallToggle.setAttribute('aria-checked',
-            String(this.game.wallCollisionEnabled));
+        // Sync toggles with stored values on init
         this.animationToggle.setAttribute('aria-checked',
             String(this.game.animationStyle === 'smooth'));
+        this.syncDifficultySelector();
 
         // Event delegation on overlay
         this.handleOverlayClick = this.handleOverlayClick.bind(this);
@@ -1022,10 +1240,9 @@ class UIManager {
 
     showSettings() {
         // Sync toggles with current values
-        this.wallToggle.setAttribute('aria-checked',
-            String(this.game.wallCollisionEnabled));
         this.animationToggle.setAttribute('aria-checked',
             String(this.game.animationStyle === 'smooth'));
+        this.syncDifficultySelector();
 
         this.renderThemePicker();
         this.container.setAttribute('data-ui', 'settings');
@@ -1110,6 +1327,18 @@ class UIManager {
         }
     }
 
+    syncDifficultySelector() {
+        if (!this.difficultySelector) return;
+        const midGame = this.game.state === GameState.PLAYING || this.game.state === GameState.PAUSED;
+        const options = this.difficultySelector.querySelectorAll('.ui-segmented__option');
+        options.forEach(opt => {
+            opt.setAttribute('aria-checked',
+                String(opt.dataset.difficulty === this.game.difficulty));
+            opt.classList.toggle('ui-segmented__option--disabled', midGame);
+            opt.setAttribute('aria-disabled', String(midGame));
+        });
+    }
+
     showThemeUnlockNotification(themeNames) {
         const names = themeNames.map(k => THEMES[k]?.name || k).join(', ');
         this._pendingThemeUnlock = names;
@@ -1122,8 +1351,8 @@ class UIManager {
     updateScore(score) {
         this.finalScoreEl.textContent = score;
 
-        // Update best score label
-        const board = this.game.storage.getLeaderboard();
+        // Update best score label (filtered by current difficulty)
+        const board = this.game.storage.getLeaderboard(this.game.difficulty);
         if (board.length > 0) {
             this.bestScoreEl.textContent = `Best: ${board[0].score}`;
         } else {
@@ -1273,8 +1502,9 @@ class UIManager {
 
     _submitInitials() {
         const initials = this._initialsChars.map(c => String.fromCharCode(65 + c)).join('');
-        const wasTopScore = this._initialsStorage.isNewTopScore(this._initialsScore);
-        this._initialsStorage.addScore(initials, this._initialsScore);
+        const difficulty = this.game.difficulty;
+        const wasTopScore = this._initialsStorage.isNewTopScore(this._initialsScore, difficulty);
+        this._initialsStorage.addScore(initials, this._initialsScore, difficulty);
         this.hideInitials();
         // Refresh game-over screen with updated best score
         this.updateScore(this._initialsScore);
@@ -1290,39 +1520,98 @@ class UIManager {
         this.leaderboardStatusEl.textContent = 'You made the leaderboard!';
     }
 
+    _renderLeaderboardRows(board, container) {
+        board.forEach((entry, i) => {
+            const row = document.createElement('div');
+            row.className = 'leaderboard-row';
+
+            const rankSpan = document.createElement('span');
+            rankSpan.className = 'leaderboard-rank';
+            rankSpan.textContent = i + 1;
+            const initialsSpan = document.createElement('span');
+            initialsSpan.className = 'leaderboard-initials';
+            initialsSpan.textContent = entry.initials;
+            const scoreSpan = document.createElement('span');
+            scoreSpan.className = 'leaderboard-score';
+            scoreSpan.textContent = entry.score;
+            const dateSpan = document.createElement('span');
+            dateSpan.className = 'leaderboard-date';
+            dateSpan.textContent = this.game.storage.formatLeaderboardDate(entry.timestamp);
+
+            row.appendChild(rankSpan);
+            row.appendChild(initialsSpan);
+            row.appendChild(scoreSpan);
+            row.appendChild(dateSpan);
+            container.appendChild(row);
+        });
+    }
+
     showLeaderboard() {
-        const board = this.game.storage.getLeaderboard();
+        const midGame = this.game.state === GameState.PLAYING || this.game.state === GameState.PAUSED;
         this.leaderboardBody.replaceChildren();
 
-        if (board.length === 0) {
-            const empty = document.createElement('p');
-            empty.className = 'leaderboard-empty';
-            empty.textContent = 'No scores yet. Play to set the first record!';
-            this.leaderboardBody.appendChild(empty);
+        // Update heading
+        const heading = this.leaderboardBody.closest('.ui-panel')?.querySelector('.ui-heading');
+
+        if (midGame) {
+            // Filtered view: single list for current difficulty
+            const diffName = (DIFFICULTY_LEVELS[this.game.difficulty] || {}).name || this.game.difficulty;
+            if (heading) heading.textContent = `High Scores \u2014 ${diffName}`;
+
+            const board = this.game.storage.getLeaderboard(this.game.difficulty).slice(0, 10);
+            if (board.length === 0) {
+                const empty = document.createElement('p');
+                empty.className = 'leaderboard-empty';
+                empty.textContent = 'No scores yet for this difficulty. Play to set the first record!';
+                this.leaderboardBody.appendChild(empty);
+            } else {
+                this._renderLeaderboardRows(board, this.leaderboardBody);
+            }
         } else {
-            board.forEach((entry, i) => {
-                const row = document.createElement('div');
-                row.className = 'leaderboard-row';
+            // Grouped view: sections for Hard, Medium, Easy, then Unranked
+            if (heading) heading.textContent = 'High Scores';
 
-                const rankSpan = document.createElement('span');
-                rankSpan.className = 'leaderboard-rank';
-                rankSpan.textContent = i + 1;
-                const initialsSpan = document.createElement('span');
-                initialsSpan.className = 'leaderboard-initials';
-                initialsSpan.textContent = entry.initials;
-                const scoreSpan = document.createElement('span');
-                scoreSpan.className = 'leaderboard-score';
-                scoreSpan.textContent = entry.score;
-                const dateSpan = document.createElement('span');
-                dateSpan.className = 'leaderboard-date';
-                dateSpan.textContent = this.game.storage.formatLeaderboardDate(entry.timestamp);
+            const allEntries = this.game.storage.getLeaderboard();
+            const groups = [
+                { key: 'hard', name: 'Hard' },
+                { key: 'medium', name: 'Medium' },
+                { key: 'easy', name: 'Easy' }
+            ];
 
-                row.appendChild(rankSpan);
-                row.appendChild(initialsSpan);
-                row.appendChild(scoreSpan);
-                row.appendChild(dateSpan);
-                this.leaderboardBody.appendChild(row);
-            });
+            let hasAny = false;
+            for (const group of groups) {
+                const entries = allEntries
+                    .filter(e => e.difficulty === group.key)
+                    .slice(0, 10);
+                if (entries.length === 0) continue;
+                hasAny = true;
+
+                const sectionHeader = document.createElement('div');
+                sectionHeader.className = 'leaderboard-section-header';
+                sectionHeader.textContent = group.name;
+                this.leaderboardBody.appendChild(sectionHeader);
+
+                this._renderLeaderboardRows(entries, this.leaderboardBody);
+            }
+
+            // Legacy entries (no difficulty)
+            const legacy = allEntries.filter(e => !e.difficulty).slice(0, 10);
+            if (legacy.length > 0) {
+                hasAny = true;
+                const sectionHeader = document.createElement('div');
+                sectionHeader.className = 'leaderboard-section-header';
+                sectionHeader.textContent = 'Unranked';
+                this.leaderboardBody.appendChild(sectionHeader);
+
+                this._renderLeaderboardRows(legacy, this.leaderboardBody);
+            }
+
+            if (!hasAny) {
+                const empty = document.createElement('p');
+                empty.className = 'leaderboard-empty';
+                empty.textContent = 'No scores yet. Play to set the first record!';
+                this.leaderboardBody.appendChild(empty);
+            }
         }
 
         this._leaderboardPrevUi = this.container.getAttribute('data-ui');
@@ -1339,6 +1628,16 @@ class UIManager {
     }
 
     handleOverlayClick(event) {
+        // Check for difficulty selector click (no data-action)
+        const diffOption = event.target.closest('.ui-segmented__option[data-difficulty]');
+        if (diffOption && diffOption.dataset.difficulty) {
+            // Block difficulty changes mid-game
+            if (this.game.state === GameState.PLAYING || this.game.state === GameState.PAUSED) return;
+            this.game.setDifficulty(diffOption.dataset.difficulty);
+            this.syncDifficultySelector();
+            return;
+        }
+
         const action = event.target.closest('[data-action]');
         if (!action) return;
 
@@ -1368,12 +1667,6 @@ class UIManager {
                 this.game.reset();
                 this.game.setState(GameState.MENU);
                 break;
-            case 'toggle-wall-collision': {
-                const newVal = !this.game.wallCollisionEnabled;
-                this.game.setWallCollision(newVal);
-                this.wallToggle.setAttribute('aria-checked', String(newVal));
-                break;
-            }
             case 'toggle-animation-style': {
                 const newStyle = this.game.animationStyle === 'smooth' ? 'classic' : 'smooth';
                 this.game.setAnimationStyle(newStyle);
@@ -1430,13 +1723,17 @@ class Game {
         const centerY = Math.floor(this.config.gridHeight / 2);
         this.snake = new Snake(centerX, centerY, this.config.initialSnakeLength || 3);
 
-        // Initialize food
+        // Initialize food (regular + special slot)
         this.food = new Food(this.config.gridWidth, this.config.gridHeight);
+        this.specialFood = new Food(this.config.gridWidth, this.config.gridHeight);
         this.score = 0;
         this.tickCount = 0;
 
-        // Wall collision setting (true = GAMEOVER on wall hit, false = wrap-around)
-        this.wallCollisionEnabled = this.storage.get('wallCollision', true);
+        // Difficulty setting
+        this.difficulty = this.storage.get('difficulty', 'medium');
+
+        // Wall collision derived from difficulty
+        this.wallCollisionEnabled = this.getDifficultyConfig().wallCollision;
 
         // Animation style setting
         this.animationStyle = this.storage.get('animationStyle', 'smooth');
@@ -1486,7 +1783,7 @@ class Game {
 
         this.setState(GameState.GAMEOVER);
 
-        if (this.ui && this.score > 0 && this.storage.isHighScore(this.score)) {
+        if (this.ui && this.score > 0 && this.storage.isHighScore(this.score, this.difficulty)) {
             this.ui.showInitials(this.score, this.storage);
         }
     }
@@ -1504,11 +1801,6 @@ class Game {
             x: ((pos.x % w) + w) % w,
             y: ((pos.y % h) + h) % h
         };
-    }
-
-    setWallCollision(enabled) {
-        this.wallCollisionEnabled = enabled;
-        this.storage.set('wallCollision', enabled);
     }
 
     setAnimationStyle(style) {
@@ -1585,6 +1877,57 @@ class Game {
         this.animationFrameId = requestAnimationFrame(this.loop);
     }
 
+    getDifficultyConfig() {
+        return DIFFICULTY_LEVELS[this.difficulty] || DIFFICULTY_LEVELS.medium;
+    }
+
+    updateTickRate() {
+        const config = this.getDifficultyConfig();
+        const speedUps = Math.floor(this.score / config.speedScoreStep);
+        const newRate = Math.min(config.baseTickRate + speedUps, config.maxTickRate);
+        this.tickInterval = 1000 / newRate;
+    }
+
+    calculateToxicPenalty() {
+        // Base -5, scales: penalty = -5 * ceil(score / 50)
+        const multiplier = Math.max(1, Math.ceil(this.score / 50));
+        return -5 * multiplier;
+    }
+
+    calculateToxicSegments() {
+        const config = this.getDifficultyConfig();
+        if (!config.toxicSegmentDivisor) return 0;
+        return Math.max(config.toxicSegmentBase, Math.floor(this.snake.body.length / config.toxicSegmentDivisor));
+    }
+
+    setDifficulty(difficulty) {
+        if (!DIFFICULTY_LEVELS[difficulty]) return;
+        this.difficulty = difficulty;
+        this.storage.set('difficulty', difficulty);
+        this.wallCollisionEnabled = DIFFICULTY_LEVELS[difficulty].wallCollision;
+        this.updateTickRate();
+        this.updateHUD();
+    }
+
+    updateHUD() {
+        if (!this._hudScore) return;
+        this._hudScore.textContent = this.score;
+        this._hudLength.textContent = this.snake.body.length;
+        this._hudDifficulty.textContent = this.getDifficultyConfig().name;
+
+        // Toxic penalty info (only when difficulty has toxic food)
+        const config = this.getDifficultyConfig();
+        if (config.toxicFoodChance > 0) {
+            const penalty = this.calculateToxicPenalty();
+            const segments = this.calculateToxicSegments();
+            this._hudToxicPoints.textContent = `${penalty} pts`;
+            this._hudToxicSegments.textContent = `-${segments} seg`;
+            this._hudToxic.hidden = false;
+        } else {
+            this._hudToxic.hidden = true;
+        }
+    }
+
     tick() {
         // Game logic updates (only when playing)
         if (this.state !== GameState.PLAYING) {
@@ -1629,16 +1972,79 @@ class Game {
             this.food.spawn(this.snake.body, this.tickCount);
         }
 
-        // Check food collision
+        // Check regular food collision
         if (this.food.checkCollision(this.snake.getHead())) {
             this.score += this.food.points;
             this.snake.grow();
+            this.updateTickRate();
             this.food.spawn(this.snake.body, this.tickCount);
         }
 
         // Check food decay
         if (this.food.isExpired(this.tickCount)) {
             this.food.spawn(this.snake.body, this.tickCount);
+        }
+
+        // Special food logic
+        const diffConfig = this.getDifficultyConfig();
+
+        // Check special food collision
+        if (this.specialFood.position && this.specialFood.checkCollision(this.snake.getHead())) {
+            switch (this.specialFood.foodType) {
+                case FoodType.BONUS:
+                    this.score += 25;
+                    this.snake.grow();
+                    this.updateTickRate();
+                    break;
+                case FoodType.TOXIC: {
+                    // Deduct points (never go negative)
+                    this.score = Math.max(0, this.score + this.calculateToxicPenalty());
+                    // Remove segments
+                    const segmentsToRemove = this.calculateToxicSegments();
+                    this.snake.removeSegments(segmentsToRemove);
+                    // Game over if only head remains
+                    if (this.snake.body.length <= 1) {
+                        this.specialFood.reset();
+                        this.handleGameOver();
+                        return;
+                    }
+                    this.updateTickRate();
+                    break;
+                }
+                case FoodType.LETHAL:
+                    this.specialFood.reset();
+                    this.handleGameOver();
+                    return;
+            }
+            this.specialFood.reset();
+        }
+
+        // Check special food expiry
+        if (this.specialFood.position && this.specialFood.isExpired(this.tickCount)) {
+            this.specialFood.reset();
+        }
+
+        // Maybe spawn special food (only if none active)
+        if (!this.specialFood.position && this.tickCount % 10 === 0) {
+            const roll = Math.random();
+            const excludePositions = [...this.snake.body];
+            if (this.food.position) excludePositions.push(this.food.position);
+            const goodFoodPos = this.food.position;
+            const prox = diffConfig.hazardProximity;
+
+            if (roll < diffConfig.lethalFoodChance) {
+                // Try proximity spawn first, fall back to random if it fails
+                if (!(goodFoodPos && prox && this.specialFood.spawnNearTarget(goodFoodPos, prox.min, prox.max, excludePositions, this.tickCount, FoodType.LETHAL, SPECIAL_FOOD_TICKS))) {
+                    this.specialFood.spawn(excludePositions, this.tickCount, FoodType.LETHAL, SPECIAL_FOOD_TICKS);
+                }
+            } else if (roll < diffConfig.lethalFoodChance + diffConfig.toxicFoodChance) {
+                // Try proximity spawn first, fall back to random if it fails
+                if (!(goodFoodPos && prox && this.specialFood.spawnNearTarget(goodFoodPos, prox.min, prox.max, excludePositions, this.tickCount, FoodType.TOXIC, SPECIAL_FOOD_TICKS))) {
+                    this.specialFood.spawn(excludePositions, this.tickCount, FoodType.TOXIC, SPECIAL_FOOD_TICKS);
+                }
+            } else if (roll < diffConfig.lethalFoodChance + diffConfig.toxicFoodChance + diffConfig.bonusFoodChance) {
+                this.specialFood.spawn(excludePositions, this.tickCount, FoodType.BONUS, SPECIAL_FOOD_TICKS);
+            }
         }
     }
 
@@ -1659,10 +2065,16 @@ class Game {
             if (this.state !== GameState.GAMEOVER) {
                 const isDecayWarning = this.food.isDecayWarning(this.tickCount);
                 this.renderer.drawFood(this.food, isDecayWarning, this.tickCount);
+
+                // Draw special food
+                if (this.specialFood.position) {
+                    const specialDecayWarning = this.specialFood.isDecayWarning(this.tickCount);
+                    this.renderer.drawFood(this.specialFood, specialDecayWarning, this.tickCount);
+                }
             }
 
-            // Draw score (always visible so player sees final score)
-            this.renderer.drawScore(this.score, this.snake.body.length);
+            // Update HUD
+            this.updateHUD();
         }
     }
 
@@ -1671,6 +2083,10 @@ class Game {
         this.score = 0;
         this.tickCount = 0;
 
+        // Sync settings from current difficulty
+        this.updateTickRate();
+        this.wallCollisionEnabled = this.getDifficultyConfig().wallCollision;
+
         // Reset snake to center
         const centerX = Math.floor(this.config.gridWidth / 2);
         const centerY = Math.floor(this.config.gridHeight / 2);
@@ -1678,6 +2094,7 @@ class Game {
 
         // Reset food
         this.food.reset();
+        this.specialFood.reset();
 
         // Clear input queue
         this.inputHandler.clearQueue();
@@ -1709,6 +2126,14 @@ if (typeof document !== 'undefined') {
         const container = document.querySelector('.game-container');
         const overlay = document.getElementById('overlay');
         game.ui = new UIManager(container, overlay, game);
+
+        // Cache HUD elements
+        game._hudScore = document.getElementById('hud-score');
+        game._hudLength = document.getElementById('hud-length');
+        game._hudDifficulty = document.getElementById('hud-difficulty');
+        game._hudToxicPoints = document.getElementById('hud-toxic-points');
+        game._hudToxicSegments = document.getElementById('hud-toxic-segments');
+        game._hudToxic = document.getElementById('hud-toxic');
 
         // Block all input while settings modal is open
         game.inputHandler.inputGate = () => container.hasAttribute('data-ui');
@@ -1759,6 +2184,81 @@ if (typeof document !== 'undefined') {
 
         // Expose game instance for debugging
         window.game = game;
+
+        // Dev tools (console API for manual testing)
+        window.dev = {
+            spawnFood(type = 'bonus') {
+                if (!FoodType[type.toUpperCase()]) {
+                    console.error(`Unknown food type: ${type}. Use: ${Object.values(FoodType).join(', ')}`);
+                    return;
+                }
+                const foodType = FoodType[type.toUpperCase()];
+                const excludePositions = [...game.snake.body];
+                if (game.food.position) excludePositions.push(game.food.position);
+
+                if (foodType === FoodType.REGULAR) {
+                    game.food.spawn(excludePositions, game.tickCount);
+                } else if ((foodType === FoodType.TOXIC || foodType === FoodType.LETHAL) && game.food.position) {
+                    const prox = game.getDifficultyConfig().hazardProximity;
+                    if (prox) {
+                        game.specialFood.spawnNearTarget(game.food.position, prox.min, prox.max, excludePositions, game.tickCount, foodType, SPECIAL_FOOD_TICKS);
+                    } else {
+                        game.specialFood.spawn(excludePositions, game.tickCount, foodType, SPECIAL_FOOD_TICKS);
+                    }
+                } else {
+                    game.specialFood.spawn(excludePositions, game.tickCount, foodType, SPECIAL_FOOD_TICKS);
+                }
+                const pos = foodType === FoodType.REGULAR ? game.food.position : game.specialFood.position;
+                console.log(`Spawned ${type} food at (${pos ? pos.x : '?'}, ${pos ? pos.y : '?'})`);
+            },
+            setScore(score) {
+                game.score = Math.max(0, score);
+                game.updateTickRate();
+                console.log(`Score set to ${game.score} (tick rate: ${(1000 / game.tickInterval).toFixed(1)} Hz)`);
+            },
+            setDifficulty(level) {
+                game.setDifficulty(level);
+                if (game.ui) game.ui.syncDifficultySelector();
+                console.log(`Difficulty set to ${level} (walls ${game.wallCollisionEnabled ? 'kill' : 'wrap'})`);
+            },
+            setSpeed(tickRate) {
+                game.tickInterval = 1000 / tickRate;
+                console.log(`Tick rate set to ${tickRate} Hz`);
+            },
+            grow(segments = 5) {
+                for (let i = 0; i < segments; i++) game.snake.grow();
+                console.log(`Snake length: ${game.snake.body.length}`);
+            },
+            kill() {
+                game.setState(GameState.GAMEOVER);
+                console.log('Game over triggered');
+            },
+            status() {
+                const config = game.getDifficultyConfig();
+                console.table({
+                    state: game.state,
+                    difficulty: `${config.name} (${game.difficulty})`,
+                    score: game.score,
+                    length: game.snake.body.length,
+                    tickRate: `${(1000 / game.tickInterval).toFixed(1)} Hz`,
+                    wallCollision: game.wallCollisionEnabled,
+                    tickCount: game.tickCount,
+                    food: game.food.active ? `${game.food.foodType} at (${game.food.x},${game.food.y})` : 'none',
+                    specialFood: game.specialFood.active ? `${game.specialFood.foodType} at (${game.specialFood.x},${game.specialFood.y})` : 'none'
+                });
+            },
+            help() {
+                console.log([
+                    'dev.spawnFood(type)  - Spawn food: regular, bonus, toxic, lethal',
+                    'dev.setScore(n)      - Set score and update speed',
+                    'dev.setDifficulty(d) - Set difficulty: easy, medium, hard',
+                    'dev.setSpeed(hz)     - Override tick rate',
+                    'dev.grow(n)          - Grow snake by n segments (default 5)',
+                    'dev.kill()           - Trigger game over',
+                    'dev.status()         - Show current game state',
+                ].join('\n'));
+            }
+        };
     });
 }
 
@@ -1769,8 +2269,9 @@ if (typeof document !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         Game, Renderer, Snake, Food, InputHandler, StorageManager, UIManager,
-        GameState, Direction,
+        GameState, Direction, FoodType,
         GRID_WIDTH, GRID_HEIGHT, CELL_SIZE,
-        FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_MAX_SPAWN_ATTEMPTS
+        FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_MAX_SPAWN_ATTEMPTS,
+        SPECIAL_FOOD_TICKS, DIFFICULTY_LEVELS
     };
 }
