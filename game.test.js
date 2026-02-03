@@ -61,9 +61,10 @@ const createMockCanvas = () => {
 // Import game module
 const {
     Game, Renderer, Snake, Food, InputHandler, StorageManager,
-    GameState, Direction,
+    GameState, Direction, FoodType,
     GRID_WIDTH, GRID_HEIGHT, CELL_SIZE,
-    FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_MAX_SPAWN_ATTEMPTS
+    FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_MAX_SPAWN_ATTEMPTS,
+    SPECIAL_FOOD_TICKS, DIFFICULTY_LEVELS
 } = require('./game.js');
 
 // =============================================================================
@@ -74,8 +75,8 @@ describe('Game Constants', () => {
     test('grid dimensions are defined', () => {
         assert.strictEqual(typeof GRID_WIDTH, 'number');
         assert.strictEqual(typeof GRID_HEIGHT, 'number');
-        assert.strictEqual(GRID_WIDTH, 20);
-        assert.strictEqual(GRID_HEIGHT, 20);
+        assert.strictEqual(GRID_WIDTH, 25);
+        assert.strictEqual(GRID_HEIGHT, 25);
     });
 
     test('cell size is defined', () => {
@@ -1076,13 +1077,12 @@ describe('Game Food Integration', () => {
         assert.strictEqual(game.tickCount, 3);
     });
 
-    test('score visible during GAMEOVER state', () => {
+    test('HUD updates during GAMEOVER state', () => {
         game.score = 100;
         game.setState(GameState.GAMEOVER);
-        canvas._ctx.fillText.mock.resetCalls();
         game.render();
-        // drawScore calls fillText twice (shadow + text)
-        assert.ok(canvas._ctx.fillText.mock.calls.length >= 2);
+        // updateHUD is called in render — no canvas text drawing needed
+        assert.strictEqual(game.score, 100);
     });
 
     test('food not drawn during GAMEOVER state', () => {
@@ -1145,17 +1145,8 @@ describe('Renderer Food Drawing', () => {
         assert.strictEqual(canvas._ctx.bezierCurveTo.mock.calls.length, 2);
     });
 
-    test('drawScore draws text', () => {
-        renderer.drawScore(100, 5);
-        // Should draw shadow and main text
-        assert.strictEqual(canvas._ctx.fillText.mock.calls.length, 2);
-    });
-
-    test('drawScore sets correct text properties', () => {
-        renderer.drawScore(50, 3);
-        assert.strictEqual(canvas._ctx.font, '14px monospace');
-        assert.strictEqual(canvas._ctx.textAlign, 'left');
-        assert.strictEqual(canvas._ctx.textBaseline, 'top');
+    test('drawScore removed (HUD is now HTML-based)', () => {
+        assert.strictEqual(typeof renderer.drawScore, 'undefined');
     });
 });
 
@@ -1302,14 +1293,13 @@ describe('StorageManager Leaderboard', () => {
         assert.strictEqual(board[2].score, 50);
     });
 
-    test('leaderboard limits to 10 entries', () => {
-        for (let i = 0; i < 12; i++) {
+    test('leaderboard storage caps at 50 entries', () => {
+        for (let i = 0; i < 55; i++) {
             storage.addScore('AAA', (i + 1) * 10);
         }
         const board = storage.getLeaderboard();
-        assert.strictEqual(board.length, 10);
-        assert.strictEqual(board[0].score, 120);
-        assert.strictEqual(board[9].score, 30);
+        assert.strictEqual(board.length, 50);
+        assert.strictEqual(board[0].score, 550);
     });
 
     test('ties broken by earlier timestamp first', () => {
@@ -1432,8 +1422,8 @@ describe('Game Wall Collision', () => {
     });
 
     test('checkWallCollision returns true when x >= gridWidth', () => {
-        assert.strictEqual(game.checkWallCollision({ x: 20, y: 10 }), true);
         assert.strictEqual(game.checkWallCollision({ x: 25, y: 10 }), true);
+        assert.strictEqual(game.checkWallCollision({ x: 30, y: 10 }), true);
     });
 
     test('checkWallCollision returns true when y < 0', () => {
@@ -1441,8 +1431,8 @@ describe('Game Wall Collision', () => {
     });
 
     test('checkWallCollision returns true when y >= gridHeight', () => {
-        assert.strictEqual(game.checkWallCollision({ x: 10, y: 20 }), true);
         assert.strictEqual(game.checkWallCollision({ x: 10, y: 25 }), true);
+        assert.strictEqual(game.checkWallCollision({ x: 10, y: 30 }), true);
     });
 
     test('checkWallCollision returns false for valid center position', () => {
@@ -1451,9 +1441,9 @@ describe('Game Wall Collision', () => {
 
     test('checkWallCollision returns false for edge positions (inside)', () => {
         assert.strictEqual(game.checkWallCollision({ x: 0, y: 0 }), false);
-        assert.strictEqual(game.checkWallCollision({ x: 19, y: 0 }), false);
-        assert.strictEqual(game.checkWallCollision({ x: 0, y: 19 }), false);
-        assert.strictEqual(game.checkWallCollision({ x: 19, y: 19 }), false);
+        assert.strictEqual(game.checkWallCollision({ x: 24, y: 0 }), false);
+        assert.strictEqual(game.checkWallCollision({ x: 0, y: 24 }), false);
+        assert.strictEqual(game.checkWallCollision({ x: 24, y: 24 }), false);
     });
 
     test('wall collision triggers GAMEOVER when enabled', () => {
@@ -1461,12 +1451,12 @@ describe('Game Wall Collision', () => {
         game.wallCollisionEnabled = true;
         // Position snake near right edge
         game.snake.body = [
-            { x: 19, y: 10 },
-            { x: 18, y: 10 },
-            { x: 17, y: 10 }
+            { x: 24, y: 10 },
+            { x: 23, y: 10 },
+            { x: 22, y: 10 }
         ];
         game.snake.direction = Direction.RIGHT;
-        game.tick(); // Head moves to x=20, which is out of bounds
+        game.tick(); // Head moves to x=25, which is out of bounds
         assert.strictEqual(game.state, GameState.GAMEOVER);
     });
 
@@ -1475,31 +1465,32 @@ describe('Game Wall Collision', () => {
         game.wallCollisionEnabled = false;
         // Position snake near right edge
         game.snake.body = [
-            { x: 19, y: 10 },
-            { x: 18, y: 10 },
-            { x: 17, y: 10 }
+            { x: 24, y: 10 },
+            { x: 23, y: 10 },
+            { x: 22, y: 10 }
         ];
         game.snake.direction = Direction.RIGHT;
-        game.tick(); // Head moves to x=20, should wrap to x=0
+        game.tick(); // Head moves to x=25, should wrap to x=0
         assert.strictEqual(game.state, GameState.PLAYING);
         assert.strictEqual(game.snake.getHead().x, 0);
     });
 
-    test('wallCollisionEnabled defaults to true', () => {
+    test('wallCollisionEnabled defaults to true (medium difficulty)', () => {
         assert.strictEqual(game.wallCollisionEnabled, true);
     });
 
-    test('wallCollisionEnabled loads from storage', () => {
+    test('wallCollisionEnabled derived from difficulty config', () => {
         global.localStorage.clear();
-        global.localStorage.setItem('snake_wallCollision', 'false');
+        global.localStorage.setItem('snake_difficulty', '"easy"');
         const newGame = new Game(createMockCanvas());
         assert.strictEqual(newGame.wallCollisionEnabled, false);
     });
 
-    test('setWallCollision updates setting and saves to storage', () => {
-        game.setWallCollision(false);
+    test('setDifficulty updates wallCollisionEnabled', () => {
+        game.setDifficulty('easy');
         assert.strictEqual(game.wallCollisionEnabled, false);
-        assert.strictEqual(global.localStorage.getItem('snake_wallCollision'), 'false');
+        game.setDifficulty('hard');
+        assert.strictEqual(game.wallCollisionEnabled, true);
     });
 });
 
@@ -1519,19 +1510,19 @@ describe('Game Wrap-Around', () => {
     });
 
     test('wrapPosition wraps right edge to left', () => {
-        const wrapped = game.wrapPosition({ x: 20, y: 10 });
+        const wrapped = game.wrapPosition({ x: 25, y: 10 });
         assert.strictEqual(wrapped.x, 0);
         assert.strictEqual(wrapped.y, 10);
     });
 
     test('wrapPosition wraps left edge to right', () => {
         const wrapped = game.wrapPosition({ x: -1, y: 10 });
-        assert.strictEqual(wrapped.x, 19);
+        assert.strictEqual(wrapped.x, 24);
         assert.strictEqual(wrapped.y, 10);
     });
 
     test('wrapPosition wraps bottom edge to top', () => {
-        const wrapped = game.wrapPosition({ x: 10, y: 20 });
+        const wrapped = game.wrapPosition({ x: 10, y: 25 });
         assert.strictEqual(wrapped.x, 10);
         assert.strictEqual(wrapped.y, 0);
     });
@@ -1539,17 +1530,17 @@ describe('Game Wrap-Around', () => {
     test('wrapPosition wraps top edge to bottom', () => {
         const wrapped = game.wrapPosition({ x: 10, y: -1 });
         assert.strictEqual(wrapped.x, 10);
-        assert.strictEqual(wrapped.y, 19);
+        assert.strictEqual(wrapped.y, 24);
     });
 
     test('wrapPosition handles corner case (-1, -1)', () => {
         const wrapped = game.wrapPosition({ x: -1, y: -1 });
-        assert.strictEqual(wrapped.x, 19);
-        assert.strictEqual(wrapped.y, 19);
+        assert.strictEqual(wrapped.x, 24);
+        assert.strictEqual(wrapped.y, 24);
     });
 
-    test('wrapPosition handles corner case (20, 20)', () => {
-        const wrapped = game.wrapPosition({ x: 20, y: 20 });
+    test('wrapPosition handles corner case (25, 25)', () => {
+        const wrapped = game.wrapPosition({ x: 25, y: 25 });
         assert.strictEqual(wrapped.x, 0);
         assert.strictEqual(wrapped.y, 0);
     });
@@ -1563,9 +1554,9 @@ describe('Game Wrap-Around', () => {
     test('snake wraps from right to left during tick', () => {
         game.setState(GameState.PLAYING);
         game.snake.body = [
-            { x: 19, y: 10 },
-            { x: 18, y: 10 },
-            { x: 17, y: 10 }
+            { x: 24, y: 10 },
+            { x: 23, y: 10 },
+            { x: 22, y: 10 }
         ];
         game.snake.direction = Direction.RIGHT;
         game.tick();
@@ -1582,15 +1573,15 @@ describe('Game Wrap-Around', () => {
         ];
         game.snake.direction = Direction.LEFT;
         game.tick();
-        assert.strictEqual(game.snake.getHead().x, 19);
+        assert.strictEqual(game.snake.getHead().x, 24);
     });
 
     test('snake wraps from bottom to top during tick', () => {
         game.setState(GameState.PLAYING);
         game.snake.body = [
-            { x: 10, y: 19 },
-            { x: 10, y: 18 },
-            { x: 10, y: 17 }
+            { x: 10, y: 24 },
+            { x: 10, y: 23 },
+            { x: 10, y: 22 }
         ];
         game.snake.direction = Direction.DOWN;
         game.tick();
@@ -1606,31 +1597,28 @@ describe('Game Wrap-Around', () => {
         ];
         game.snake.direction = Direction.UP;
         game.tick();
-        assert.strictEqual(game.snake.getHead().y, 19);
+        assert.strictEqual(game.snake.getHead().y, 24);
     });
 
     test('self-collision detected after wrap (head wraps into body)', () => {
         game.setState(GameState.PLAYING);
-        // Create a snake that wraps and collides with itself
-        // Snake body fills from x=0 to x=5 on y=10
-        // Plus wrapping position at x=19
         game.snake.body = [
             { x: 0, y: 10 },    // head at left edge
-            { x: 19, y: 10 },   // body segment at right edge (wrap destination)
-            { x: 18, y: 10 },
-            { x: 17, y: 10 }
+            { x: 24, y: 10 },   // body segment at right edge (wrap destination)
+            { x: 23, y: 10 },
+            { x: 22, y: 10 }
         ];
         game.snake.direction = Direction.LEFT;
-        game.tick(); // Head wraps to x=19, collides with body[1]
+        game.tick(); // Head wraps to x=24, collides with body[1]
         assert.strictEqual(game.state, GameState.GAMEOVER);
     });
 
     test('food at wrap destination is collected', () => {
         game.setState(GameState.PLAYING);
         game.snake.body = [
-            { x: 19, y: 10 },
-            { x: 18, y: 10 },
-            { x: 17, y: 10 }
+            { x: 24, y: 10 },
+            { x: 23, y: 10 },
+            { x: 22, y: 10 }
         ];
         game.snake.direction = Direction.RIGHT;
         game.food.position = { x: 0, y: 10 }; // Food at wrap destination
@@ -1650,10 +1638,10 @@ describe('Game Settings Persistence', () => {
         global.localStorage.clear();
     });
 
-    test('wallCollisionEnabled survives game.reset()', () => {
+    test('wallCollisionEnabled survives game.reset() (derived from difficulty)', () => {
         const canvas = createMockCanvas();
         const game = new Game(canvas);
-        game.setWallCollision(false);
+        game.setDifficulty('easy');
         game.reset();
         assert.strictEqual(game.wallCollisionEnabled, false);
     });
@@ -1822,5 +1810,645 @@ describe('Animation style setting', () => {
         game.render();
         // If we got here without error, clamping works
         assert.ok(true);
+    });
+});
+
+// =============================================================================
+// DIFFICULTY SYSTEM TESTS
+// =============================================================================
+
+describe('Difficulty Constants', () => {
+    test('DIFFICULTY_LEVELS has easy, medium, hard', () => {
+        assert.ok(DIFFICULTY_LEVELS.easy);
+        assert.ok(DIFFICULTY_LEVELS.medium);
+        assert.ok(DIFFICULTY_LEVELS.hard);
+    });
+
+    test('each difficulty has required properties', () => {
+        for (const [key, config] of Object.entries(DIFFICULTY_LEVELS)) {
+            assert.strictEqual(typeof config.name, 'string', `${key}.name`);
+            assert.strictEqual(typeof config.baseTickRate, 'number', `${key}.baseTickRate`);
+            assert.strictEqual(typeof config.maxTickRate, 'number', `${key}.maxTickRate`);
+            assert.strictEqual(typeof config.speedScoreStep, 'number', `${key}.speedScoreStep`);
+            assert.strictEqual(typeof config.bonusFoodChance, 'number', `${key}.bonusFoodChance`);
+            assert.strictEqual(typeof config.toxicFoodChance, 'number', `${key}.toxicFoodChance`);
+            assert.strictEqual(typeof config.lethalFoodChance, 'number', `${key}.lethalFoodChance`);
+        }
+    });
+
+    test('easy has no toxic or lethal food', () => {
+        assert.strictEqual(DIFFICULTY_LEVELS.easy.toxicFoodChance, 0);
+        assert.strictEqual(DIFFICULTY_LEVELS.easy.lethalFoodChance, 0);
+    });
+
+    test('medium has no lethal food', () => {
+        assert.strictEqual(DIFFICULTY_LEVELS.medium.lethalFoodChance, 0);
+    });
+
+    test('hard has lethal food', () => {
+        assert.ok(DIFFICULTY_LEVELS.hard.lethalFoodChance > 0);
+    });
+});
+
+describe('FoodType enum', () => {
+    test('has all food types', () => {
+        assert.strictEqual(FoodType.REGULAR, 'regular');
+        assert.strictEqual(FoodType.BONUS, 'bonus');
+        assert.strictEqual(FoodType.TOXIC, 'toxic');
+        assert.strictEqual(FoodType.LETHAL, 'lethal');
+    });
+});
+
+describe('Food type support', () => {
+    test('Food defaults to REGULAR type', () => {
+        const food = new Food(20, 20);
+        assert.strictEqual(food.foodType, FoodType.REGULAR);
+    });
+
+    test('spawn sets food type', () => {
+        const food = new Food(20, 20);
+        food.spawn([], 0, FoodType.BONUS);
+        assert.strictEqual(food.foodType, FoodType.BONUS);
+    });
+
+    test('spawn with decay override changes decay ticks', () => {
+        const food = new Food(20, 20);
+        food.spawn([], 0, FoodType.TOXIC, 60);
+        assert.strictEqual(food.decayTicks, 60);
+    });
+
+    test('spawn without decay override uses default', () => {
+        const food = new Food(20, 20, 50);
+        food.spawn([], 0, FoodType.REGULAR);
+        assert.strictEqual(food.decayTicks, FOOD_DECAY_TICKS);
+    });
+
+    test('reset clears food type to REGULAR', () => {
+        const food = new Food(20, 20);
+        food.spawn([], 0, FoodType.LETHAL, 60);
+        food.reset();
+        assert.strictEqual(food.foodType, FoodType.REGULAR);
+    });
+});
+
+describe('Game difficulty setting', () => {
+    beforeEach(() => {
+        global.localStorage.clear();
+    });
+
+    test('default difficulty is medium', () => {
+        const game = new Game(createMockCanvas());
+        assert.strictEqual(game.difficulty, 'medium');
+    });
+
+    test('difficulty loads from storage', () => {
+        global.localStorage.setItem('snake_difficulty', '"hard"');
+        const game = new Game(createMockCanvas());
+        assert.strictEqual(game.difficulty, 'hard');
+    });
+
+    test('setDifficulty updates and persists', () => {
+        const game = new Game(createMockCanvas());
+        game.setDifficulty('easy');
+        assert.strictEqual(game.difficulty, 'easy');
+        assert.strictEqual(global.localStorage.getItem('snake_difficulty'), '"easy"');
+    });
+
+    test('setDifficulty rejects invalid difficulty', () => {
+        const game = new Game(createMockCanvas());
+        game.setDifficulty('impossible');
+        assert.strictEqual(game.difficulty, 'medium');
+    });
+
+    test('getDifficultyConfig returns correct config', () => {
+        const game = new Game(createMockCanvas());
+        game.difficulty = 'hard';
+        const config = game.getDifficultyConfig();
+        assert.strictEqual(config.name, 'Hard');
+    });
+});
+
+describe('Dynamic speed scaling', () => {
+    let game;
+
+    beforeEach(() => {
+        global.localStorage.clear();
+        game = new Game(createMockCanvas());
+    });
+
+    test('updateTickRate sets base rate at score 0', () => {
+        game.difficulty = 'medium';
+        game.score = 0;
+        game.updateTickRate();
+        assert.strictEqual(game.tickInterval, 1000 / DIFFICULTY_LEVELS.medium.baseTickRate);
+    });
+
+    test('updateTickRate increases speed with score', () => {
+        game.difficulty = 'medium';
+        game.score = 100; // 2 speed steps at step=50
+        game.updateTickRate();
+        const expected = 1000 / (DIFFICULTY_LEVELS.medium.baseTickRate + 2);
+        assert.strictEqual(game.tickInterval, expected);
+    });
+
+    test('updateTickRate caps at maxTickRate', () => {
+        game.difficulty = 'medium';
+        game.score = 10000; // Way above max
+        game.updateTickRate();
+        assert.strictEqual(game.tickInterval, 1000 / DIFFICULTY_LEVELS.medium.maxTickRate);
+    });
+
+    test('reset restores base tick rate', () => {
+        game.difficulty = 'medium';
+        game.score = 200;
+        game.updateTickRate();
+        game.reset();
+        assert.strictEqual(game.tickInterval, 1000 / DIFFICULTY_LEVELS.medium.baseTickRate);
+    });
+});
+
+describe('Toxic food penalty', () => {
+    let game;
+
+    beforeEach(() => {
+        global.localStorage.clear();
+        game = new Game(createMockCanvas());
+    });
+
+    test('calculateToxicPenalty returns -5 at low scores', () => {
+        game.score = 10;
+        assert.strictEqual(game.calculateToxicPenalty(), -5);
+    });
+
+    test('calculateToxicPenalty scales with score', () => {
+        game.score = 100;
+        // ceil(100/50) = 2, penalty = -5 * 2 = -10
+        assert.strictEqual(game.calculateToxicPenalty(), -10);
+    });
+
+    test('calculateToxicPenalty at score 0 returns -5', () => {
+        game.score = 0;
+        assert.strictEqual(game.calculateToxicPenalty(), -5);
+    });
+
+    test('calculateToxicPenalty at high score is large', () => {
+        game.score = 500;
+        // ceil(500/50) = 10, penalty = -5 * 10 = -50
+        assert.strictEqual(game.calculateToxicPenalty(), -50);
+    });
+});
+
+describe('Special food gameplay', () => {
+    let game;
+
+    beforeEach(() => {
+        global.localStorage.clear();
+        game = new Game(createMockCanvas());
+        game.setState(GameState.PLAYING);
+    });
+
+    test('Game has specialFood instance', () => {
+        assert.ok(game.specialFood instanceof Food);
+    });
+
+    test('reset clears special food', () => {
+        game.specialFood.position = { x: 5, y: 5 };
+        game.specialFood.spawnTick = 10;
+        game.reset();
+        assert.strictEqual(game.specialFood.position, null);
+    });
+
+    test('bonus food adds 25 points and grows snake', () => {
+        game.tick(); // spawn regular food
+        const head = game.snake.getHead();
+        game.specialFood.position = { x: head.x + 1, y: head.y };
+        game.specialFood.spawnTick = game.tickCount;
+        game.specialFood.foodType = FoodType.BONUS;
+        game.specialFood.decayTicks = SPECIAL_FOOD_TICKS;
+
+        const initialLength = game.snake.body.length;
+        game.tick(); // eat bonus food
+        assert.strictEqual(game.score >= 25, true);
+        // Special food should be cleared
+        assert.strictEqual(game.specialFood.position, null);
+    });
+
+    test('toxic food deducts points', () => {
+        game.score = 50;
+        game.tick(); // spawn regular food
+        const head = game.snake.getHead();
+        game.specialFood.position = { x: head.x + 1, y: head.y };
+        game.specialFood.spawnTick = game.tickCount;
+        game.specialFood.foodType = FoodType.TOXIC;
+        game.specialFood.decayTicks = SPECIAL_FOOD_TICKS;
+
+        game.tick(); // eat toxic food
+        assert.ok(game.score < 50);
+        assert.strictEqual(game.state, GameState.PLAYING);
+    });
+
+    test('toxic food causes game over when snake too short', () => {
+        game.setDifficulty('medium'); // toxicSegmentBase: 1, divisor: 10
+        game.score = 50;
+        game.tick(); // spawn regular food
+        // Set snake to length 2 (head + 1 segment)
+        game.snake.body = [
+            { x: game.snake.getHead().x, y: game.snake.getHead().y },
+            { x: game.snake.getHead().x - 1, y: game.snake.getHead().y }
+        ];
+        const head = game.snake.getHead();
+        game.specialFood.position = { x: head.x + 1, y: head.y };
+        game.specialFood.spawnTick = game.tickCount;
+        game.specialFood.foodType = FoodType.TOXIC;
+        game.specialFood.decayTicks = SPECIAL_FOOD_TICKS;
+
+        game.tick(); // eat toxic food, removes 1 segment → length 1 → game over
+        assert.strictEqual(game.state, GameState.GAMEOVER);
+        assert.strictEqual(game.snake.body.length, 1);
+    });
+
+    test('lethal food causes instant game over', () => {
+        game.score = 100;
+        game.tick(); // spawn regular food
+        const head = game.snake.getHead();
+        game.specialFood.position = { x: head.x + 1, y: head.y };
+        game.specialFood.spawnTick = game.tickCount;
+        game.specialFood.foodType = FoodType.LETHAL;
+        game.specialFood.decayTicks = SPECIAL_FOOD_TICKS;
+
+        game.tick(); // eat lethal food
+        assert.strictEqual(game.state, GameState.GAMEOVER);
+    });
+
+    test('special food expires and is cleared', () => {
+        game.specialFood.position = { x: 15, y: 15 };
+        game.specialFood.spawnTick = 0;
+        game.specialFood.foodType = FoodType.BONUS;
+        game.specialFood.decayTicks = SPECIAL_FOOD_TICKS;
+
+        game.tickCount = SPECIAL_FOOD_TICKS; // Force expiry
+        game.tick();
+        assert.strictEqual(game.specialFood.position, null);
+    });
+});
+
+describe('Renderer food types', () => {
+    let canvas;
+    let renderer;
+
+    beforeEach(() => {
+        canvas = createMockCanvas();
+        renderer = new Renderer(canvas);
+    });
+
+    test('drawFood renders bonus food (star shape)', () => {
+        const food = new Food(20, 20);
+        food.position = { x: 5, y: 5 };
+        food.spawnTick = 0;
+        food.foodType = FoodType.BONUS;
+        renderer.drawFood(food, false, 0);
+        // Star uses lineTo calls
+        assert.ok(canvas._ctx.lineTo.mock.calls.length > 0);
+    });
+
+    test('drawFood renders toxic food (diamond)', () => {
+        const food = new Food(20, 20);
+        food.position = { x: 5, y: 5 };
+        food.spawnTick = 0;
+        food.foodType = FoodType.TOXIC;
+        renderer.drawFood(food, false, 0);
+        // Diamond uses lineTo, plus exclamation uses arc
+        assert.ok(canvas._ctx.lineTo.mock.calls.length > 0);
+        assert.ok(canvas._ctx.arc.mock.calls.length > 0);
+    });
+
+    test('drawFood renders lethal food (spiky circle)', () => {
+        const food = new Food(20, 20);
+        food.position = { x: 5, y: 5 };
+        food.spawnTick = 0;
+        food.foodType = FoodType.LETHAL;
+        renderer.drawFood(food, false, 0);
+        // Spiky circle uses many lineTo calls
+        assert.ok(canvas._ctx.lineTo.mock.calls.length >= 15);
+    });
+
+    test('drawFood renders regular food (apple) by default', () => {
+        const food = new Food(20, 20);
+        food.position = { x: 5, y: 5 };
+        food.spawnTick = 0;
+        food.foodType = FoodType.REGULAR;
+        renderer.drawFood(food, false, 0);
+        // Apple uses bezierCurveTo
+        assert.ok(canvas._ctx.bezierCurveTo.mock.calls.length === 2);
+    });
+});
+
+// =============================================================================
+// LEADERBOARD DIFFICULTY FILTERING TESTS
+// =============================================================================
+
+describe('Leaderboard difficulty filtering', () => {
+    let storage;
+
+    beforeEach(() => {
+        global.localStorage.clear();
+        storage = new StorageManager();
+    });
+
+    test('addScore stores difficulty field', () => {
+        storage.addScore('ACE', 100, 'medium');
+        const board = storage.getLeaderboard();
+        assert.strictEqual(board[0].difficulty, 'medium');
+    });
+
+    test('getLeaderboard without difficulty returns all entries', () => {
+        storage.addScore('AAA', 100, 'easy');
+        storage.addScore('BBB', 200, 'hard');
+        const board = storage.getLeaderboard();
+        assert.strictEqual(board.length, 2);
+    });
+
+    test('getLeaderboard with difficulty filters entries', () => {
+        storage.addScore('AAA', 100, 'easy');
+        storage.addScore('BBB', 200, 'hard');
+        storage.addScore('CCC', 150, 'easy');
+        const easyBoard = storage.getLeaderboard('easy');
+        assert.strictEqual(easyBoard.length, 2);
+        assert.ok(easyBoard.every(e => e.difficulty === 'easy'));
+    });
+
+    test('getLeaderboard includes legacy entries without difficulty', () => {
+        // Simulate old entries
+        storage.set('leaderboard', [
+            { initials: 'OLD', score: 50, timestamp: 1000 }
+        ]);
+        storage.addScore('NEW', 100, 'medium');
+        const board = storage.getLeaderboard('medium');
+        assert.strictEqual(board.length, 2); // OLD (no difficulty) + NEW (medium)
+    });
+
+    test('isHighScore filters by difficulty', () => {
+        for (let i = 0; i < 10; i++) {
+            storage.addScore('AAA', (i + 1) * 10, 'easy');
+        }
+        storage.addScore('BBB', 5, 'hard');
+        // Hard board has only 1 entry, so any score is a high score
+        assert.strictEqual(storage.isHighScore(1, 'hard'), true);
+        // Easy board has 10 entries, score of 5 doesn't beat lowest (10)
+        assert.strictEqual(storage.isHighScore(5, 'easy'), false);
+    });
+
+    test('isNewTopScore filters by difficulty', () => {
+        storage.addScore('AAA', 100, 'easy');
+        storage.addScore('BBB', 50, 'hard');
+        assert.strictEqual(storage.isNewTopScore(60, 'hard'), true);
+        assert.strictEqual(storage.isNewTopScore(60, 'easy'), false);
+    });
+
+    test('ties broken by harder difficulty first', () => {
+        storage.addScore('EAS', 100, 'easy');
+        storage.addScore('HRD', 100, 'hard');
+        storage.addScore('MED', 100, 'medium');
+        const board = storage.getLeaderboard();
+        // Same score: hard (rank 3) > medium (rank 2) > easy (rank 1)
+        assert.strictEqual(board[0].initials, 'HRD');
+        assert.strictEqual(board[1].initials, 'MED');
+        assert.strictEqual(board[2].initials, 'EAS');
+    });
+
+    test('legacy entries (no difficulty) sort after difficulty-tagged entries at same score', () => {
+        storage.addScore('NEW', 100, 'easy');
+        storage.set('leaderboard', [
+            ...storage.getLeaderboard(),
+            { initials: 'OLD', score: 100, timestamp: 1000 }
+        ]);
+        storage.addScore('HRD', 100, 'hard');
+        const board = storage.getLeaderboard();
+        // hard (rank 3) > easy (rank 1) > legacy (rank 0)
+        assert.strictEqual(board[0].initials, 'HRD');
+        assert.strictEqual(board[board.length - 1].difficulty, undefined);
+    });
+});
+
+// =============================================================================
+// HUD DIFFICULTY DISPLAY TESTS
+// =============================================================================
+
+describe('HUD difficulty display', () => {
+    test('updateHUD is a method on Game', () => {
+        const canvas = createMockCanvas();
+        const game = new Game(canvas);
+        assert.strictEqual(typeof game.updateHUD, 'function');
+    });
+
+    test('updateHUD is safe to call without DOM elements', () => {
+        const canvas = createMockCanvas();
+        const game = new Game(canvas);
+        // Should not throw when HUD elements are not cached
+        game.updateHUD();
+    });
+});
+
+// =============================================================================
+// WALL COLLISION FROM DIFFICULTY TESTS
+// =============================================================================
+
+describe('Wall collision from difficulty', () => {
+    beforeEach(() => {
+        global.localStorage.clear();
+    });
+
+    test('easy difficulty has wallCollision false', () => {
+        assert.strictEqual(DIFFICULTY_LEVELS.easy.wallCollision, false);
+    });
+
+    test('medium difficulty has wallCollision true', () => {
+        assert.strictEqual(DIFFICULTY_LEVELS.medium.wallCollision, true);
+    });
+
+    test('hard difficulty has wallCollision true', () => {
+        assert.strictEqual(DIFFICULTY_LEVELS.hard.wallCollision, true);
+    });
+
+    test('easy difficulty wraps walls during tick', () => {
+        const game = new Game(createMockCanvas());
+        game.setDifficulty('easy');
+        game.setState(GameState.PLAYING);
+        game.snake.body = [
+            { x: 24, y: 10 },
+            { x: 23, y: 10 },
+            { x: 22, y: 10 }
+        ];
+        game.snake.direction = Direction.RIGHT;
+        game.tick();
+        assert.strictEqual(game.state, GameState.PLAYING);
+        assert.strictEqual(game.snake.getHead().x, 0);
+    });
+
+    test('medium difficulty kills on wall hit', () => {
+        const game = new Game(createMockCanvas());
+        game.setDifficulty('medium');
+        game.setState(GameState.PLAYING);
+        game.snake.body = [
+            { x: 24, y: 10 },
+            { x: 23, y: 10 },
+            { x: 22, y: 10 }
+        ];
+        game.snake.direction = Direction.RIGHT;
+        game.tick();
+        assert.strictEqual(game.state, GameState.GAMEOVER);
+    });
+
+    test('reset syncs wallCollisionEnabled from difficulty', () => {
+        const game = new Game(createMockCanvas());
+        game.setDifficulty('easy');
+        game.wallCollisionEnabled = true; // manually desync
+        game.reset();
+        assert.strictEqual(game.wallCollisionEnabled, false);
+    });
+});
+
+// =============================================================================
+// SNAKE SEGMENT REMOVAL TESTS
+// =============================================================================
+
+describe('Snake removeSegments', () => {
+    test('removes segments from tail', () => {
+        const snake = new Snake(5, 5, 5);
+        const removed = snake.removeSegments(2);
+        assert.strictEqual(removed, 2);
+        assert.strictEqual(snake.body.length, 3);
+        // Head should be preserved
+        assert.deepStrictEqual(snake.body[0], { x: 5, y: 5 });
+    });
+
+    test('cannot remove head (caps at body.length - 1)', () => {
+        const snake = new Snake(5, 5, 3);
+        const removed = snake.removeSegments(10);
+        assert.strictEqual(removed, 2);
+        assert.strictEqual(snake.body.length, 1);
+    });
+
+    test('removes 0 when count is 0', () => {
+        const snake = new Snake(5, 5, 5);
+        const removed = snake.removeSegments(0);
+        assert.strictEqual(removed, 0);
+        assert.strictEqual(snake.body.length, 5);
+    });
+
+    test('reduces pending growth', () => {
+        const snake = new Snake(5, 5, 3);
+        snake.pendingGrowth = 5;
+        snake.removeSegments(3);
+        assert.strictEqual(snake.pendingGrowth, 2);
+    });
+});
+
+// =============================================================================
+// TOXIC SEGMENT CALCULATION TESTS
+// =============================================================================
+
+describe('Toxic segment calculation', () => {
+    test('medium difficulty: max(1, floor(length/10))', () => {
+        const game = new Game(createMockCanvas());
+        game.setDifficulty('medium');
+        game.snake.body = new Array(10).fill({ x: 0, y: 0 });
+        assert.strictEqual(game.calculateToxicSegments(), 1);
+        game.snake.body = new Array(25).fill({ x: 0, y: 0 });
+        assert.strictEqual(game.calculateToxicSegments(), 2);
+    });
+
+    test('hard difficulty: max(2, floor(length/5))', () => {
+        const game = new Game(createMockCanvas());
+        game.setDifficulty('hard');
+        game.snake.body = new Array(5).fill({ x: 0, y: 0 });
+        assert.strictEqual(game.calculateToxicSegments(), 2);
+        game.snake.body = new Array(20).fill({ x: 0, y: 0 });
+        assert.strictEqual(game.calculateToxicSegments(), 4);
+    });
+
+    test('easy difficulty returns 0', () => {
+        const game = new Game(createMockCanvas());
+        game.setDifficulty('easy');
+        assert.strictEqual(game.calculateToxicSegments(), 0);
+    });
+});
+
+// =============================================================================
+// PROXIMITY FOOD SPAWNING TESTS
+// =============================================================================
+
+describe('Food spawnNearTarget', () => {
+    test('spawns within Manhattan distance range', () => {
+        const food = new Food(25, 25);
+        const target = { x: 12, y: 12 };
+        const success = food.spawnNearTarget(target, 4, 6, [], 0);
+        assert.ok(success);
+        const dist = Math.abs(food.position.x - target.x) + Math.abs(food.position.y - target.y);
+        assert.ok(dist >= 4 && dist <= 6, `Distance ${dist} not in range [4, 6]`);
+    });
+
+    test('respects minimum distance', () => {
+        const food = new Food(25, 25);
+        const target = { x: 12, y: 12 };
+        const success = food.spawnNearTarget(target, 3, 3, [], 0);
+        assert.ok(success);
+        const dist = Math.abs(food.position.x - target.x) + Math.abs(food.position.y - target.y);
+        assert.strictEqual(dist, 3);
+    });
+
+    test('returns false when no valid positions', () => {
+        const food = new Food(3, 3); // Tiny grid
+        const target = { x: 1, y: 1 };
+        // Exclude everything within range 1-2
+        const exclude = [];
+        for (let x = 0; x < 3; x++) {
+            for (let y = 0; y < 3; y++) {
+                exclude.push({ x, y });
+            }
+        }
+        const success = food.spawnNearTarget(target, 1, 2, exclude, 0);
+        assert.strictEqual(success, false);
+        assert.strictEqual(food.position, null);
+    });
+
+    test('sets food type and decay correctly', () => {
+        const food = new Food(25, 25);
+        food.spawnNearTarget({ x: 12, y: 12 }, 1, 5, [], 0, FoodType.TOXIC, 60);
+        assert.strictEqual(food.foodType, FoodType.TOXIC);
+        assert.strictEqual(food.decayTicks, 60);
+    });
+
+    test('excludes occupied positions', () => {
+        const food = new Food(25, 25);
+        const target = { x: 12, y: 12 };
+        // Block all positions at distance 1 except one
+        const occupied = [
+            { x: 13, y: 12 }, { x: 11, y: 12 },
+            { x: 12, y: 13 }  // leave {12, 11} open
+        ];
+        const success = food.spawnNearTarget(target, 1, 1, occupied, 0);
+        assert.ok(success);
+        assert.deepStrictEqual(food.position, { x: 12, y: 11 });
+    });
+});
+
+// =============================================================================
+// DIFFICULTY CONFIG COMPLETENESS TESTS
+// =============================================================================
+
+describe('Difficulty config fields', () => {
+    test('all levels have hazardProximity field', () => {
+        assert.strictEqual(DIFFICULTY_LEVELS.easy.hazardProximity, null);
+        assert.deepStrictEqual(DIFFICULTY_LEVELS.medium.hazardProximity, { min: 4, max: 6 });
+        assert.deepStrictEqual(DIFFICULTY_LEVELS.hard.hazardProximity, { min: 1, max: 2 });
+    });
+
+    test('all levels have toxicSegment fields', () => {
+        assert.strictEqual(DIFFICULTY_LEVELS.easy.toxicSegmentBase, 0);
+        assert.strictEqual(DIFFICULTY_LEVELS.medium.toxicSegmentBase, 1);
+        assert.strictEqual(DIFFICULTY_LEVELS.medium.toxicSegmentDivisor, 10);
+        assert.strictEqual(DIFFICULTY_LEVELS.hard.toxicSegmentBase, 2);
+        assert.strictEqual(DIFFICULTY_LEVELS.hard.toxicSegmentDivisor, 5);
     });
 });

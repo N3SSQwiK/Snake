@@ -8,6 +8,30 @@
 </head>
 <body>
     <div class="game-container">
+        <!-- HUD (above canvas, visible during gameplay) -->
+        <div class="game-hud" id="game-hud">
+            <div class="hud-stat">
+                <span class="hud-label">Score</span>
+                <span class="hud-value" id="hud-score">0</span>
+            </div>
+            <div class="hud-stat">
+                <span class="hud-label">Length</span>
+                <span class="hud-value" id="hud-length">3</span>
+            </div>
+            <div class="hud-stat">
+                <span class="hud-label">Difficulty</span>
+                <span class="hud-value" id="hud-difficulty">Medium</span>
+            </div>
+            <div class="hud-stat hud-stat--toxic" id="hud-toxic" hidden>
+                <span class="hud-label">Toxic Penalty</span>
+                <span class="hud-value hud-value--danger">
+                    <span id="hud-toxic-points">-5 pts</span>
+                    <span class="hud-sep">|</span>
+                    <span id="hud-toxic-segments">-1 seg</span>
+                </span>
+            </div>
+        </div>
+
         <canvas id="game-canvas"></canvas>
 
         <!-- UI Overlay — screens shown/hidden via data-state and data-ui attributes -->
@@ -86,13 +110,22 @@
                 <div class="ui-panel">
                     <button class="ui-panel__close" data-action="settings-back" aria-label="Close settings">&times;</button>
                     <h2 class="ui-heading">Settings</h2>
-                    <div class="ui-setting-row">
-                        <label class="ui-label" for="wall-collision-toggle">Wall Collision</label>
-                        <button class="ui-toggle" id="wall-collision-toggle" role="switch" aria-checked="true" data-action="toggle-wall-collision">
-                            <span class="ui-toggle__track">
-                                <span class="ui-toggle__thumb"></span>
-                            </span>
-                        </button>
+                    <div class="ui-setting-group">
+                        <label class="ui-label">Difficulty</label>
+                        <div class="ui-segmented" id="difficulty-selector" role="radiogroup" aria-label="Difficulty">
+                            <button class="ui-segmented__option" data-difficulty="easy" role="radio" aria-checked="false">
+                                <span class="ui-segmented__label">Easy</span>
+                                <span class="ui-segmented__desc">Walls wrap, no hazard food</span>
+                            </button>
+                            <button class="ui-segmented__option" data-difficulty="medium" role="radio" aria-checked="true">
+                                <span class="ui-segmented__label">Medium</span>
+                                <span class="ui-segmented__desc">Walls kill, toxic food appears</span>
+                            </button>
+                            <button class="ui-segmented__option" data-difficulty="hard" role="radio" aria-checked="false">
+                                <span class="ui-segmented__label">Hard</span>
+                                <span class="ui-segmented__desc">Walls kill, toxic and lethal food</span>
+                            </button>
+                        </div>
                     </div>
                     <div class="ui-setting-row">
                         <label class="ui-label" for="animation-style-toggle">Smooth Animation</label>

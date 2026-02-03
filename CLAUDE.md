@@ -12,7 +12,9 @@ Browser-based snake game with modern features: multiple themes, difficulty level
 - **Language**: Vanilla JavaScript (no build step)
 - **Structure**: Single file architecture
 - **Style**: Class-based design for game entities
+- **Grid**: 25×25 cells, 20px cell size (500×500 canvas)
 - **Rendering**: Canvas-based for 60fps performance
+- **HUD**: HTML element above canvas (not canvas-drawn) for score, length, difficulty, toxic penalty
 - **Themes**: CSS variables for UI, JS objects for Canvas colors
 - **State persistence**: localStorage for settings and leaderboard
 - **Input**: Keyboard (arrows + WASD), touch/swipe for mobile
@@ -23,7 +25,7 @@ Browser-based snake game with modern features: multiple themes, difficulty level
 Class-based separation:
 - `Game` - Main controller, game loop, state machine
 - `Snake` - Snake state, movement, growth
-- `Food` - Food spawning, types, timers
+- `Food` - Food spawning, types, timers, proximity spawning
 - `Renderer` - Canvas drawing, animations, theme application
 - `InputHandler` - Keyboard, touch, direction queue
 - `AudioManager` - Sound effects, volume control
