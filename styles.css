@@ -892,3 +892,47 @@ body,
         min-height: 36px;
     }
 }
+
+/* =============================================================================
+   LANDSCAPE ROTATION OVERLAY
+   Shown on mobile devices in landscape orientation.
+   ============================================================================= */
+
+.landscape-overlay {
+    display: none;
+}
+
+@media (orientation: landscape) and (pointer: coarse) and (max-height: 500px) {
+    .landscape-overlay {
+        display: flex;
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        background: #0a0a0f;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+    }
+
+    .landscape-overlay__content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1rem;
+        color: var(--ui-text-muted);
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        font-size: 0.9375rem;
+        padding: 2rem;
+    }
+
+    .landscape-overlay__icon {
+        color: var(--ui-accent);
+        animation: rotate-hint 2s ease-in-out infinite;
+    }
+
+    @keyframes rotate-hint {
+        0%, 100% { transform: rotate(0deg); }
+        25% { transform: rotate(90deg); }
+        50%, 75% { transform: rotate(90deg); }
+    }
+}
