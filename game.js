@@ -334,7 +334,7 @@ class StorageManager {
     }
 
     isHighScore(score, difficulty) {
-        const board = this.getLeaderboard(difficulty);
+        const board = this.getLeaderboard(difficulty).slice(0, 10);
         return board.length < 10 || score > board[board.length - 1].score;
     }
 
@@ -2033,15 +2033,13 @@ class Game {
             const prox = diffConfig.hazardProximity;
 
             if (roll < diffConfig.lethalFoodChance) {
-                if (goodFoodPos && prox) {
-                    this.specialFood.spawnNearTarget(goodFoodPos, prox.min, prox.max, excludePositions, this.tickCount, FoodType.LETHAL, SPECIAL_FOOD_TICKS);
-                } else {
+                // Try proximity spawn first, fall back to random if it fails
+                if (!(goodFoodPos && prox && this.specialFood.spawnNearTarget(goodFoodPos, prox.min, prox.max, excludePositions, this.tickCount, FoodType.LETHAL, SPECIAL_FOOD_TICKS))) {
                     this.specialFood.spawn(excludePositions, this.tickCount, FoodType.LETHAL, SPECIAL_FOOD_TICKS);
                 }
             } else if (roll < diffConfig.lethalFoodChance + diffConfig.toxicFoodChance) {
-                if (goodFoodPos && prox) {
-                    this.specialFood.spawnNearTarget(goodFoodPos, prox.min, prox.max, excludePositions, this.tickCount, FoodType.TOXIC, SPECIAL_FOOD_TICKS);
-                } else {
+                // Try proximity spawn first, fall back to random if it fails
+                if (!(goodFoodPos && prox && this.specialFood.spawnNearTarget(goodFoodPos, prox.min, prox.max, excludePositions, this.tickCount, FoodType.TOXIC, SPECIAL_FOOD_TICKS))) {
                     this.specialFood.spawn(excludePositions, this.tickCount, FoodType.TOXIC, SPECIAL_FOOD_TICKS);
                 }
             } else if (roll < diffConfig.lethalFoodChance + diffConfig.toxicFoodChance + diffConfig.bonusFoodChance) {
