@@ -5,6 +5,56 @@
     padding: 0;
 }
 
+/* =============================================================================
+   ACCESSIBILITY
+   ============================================================================= */
+
+/* Screen reader only - visually hidden but announced */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Skip link - visible on focus for keyboard users */
+.skip-link {
+    position: absolute;
+    top: -40px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 0.5rem 1rem;
+    background: var(--ui-accent);
+    color: #000;
+    text-decoration: none;
+    font-weight: 600;
+    border-radius: 0 0 8px 8px;
+    z-index: 10000;
+    transition: top 0.2s ease;
+}
+
+.skip-link:focus {
+    top: 0;
+    outline: 2px solid #fff;
+    outline-offset: 2px;
+}
+
+/* Reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
 /* Theme CSS Custom Properties (Classic theme defaults — updated by JS) */
 :root {
     --theme-bg: #0a0a0f;
@@ -159,7 +209,8 @@ body {
 .screen-gameover,
 .screen-settings,
 .screen-initials,
-.screen-leaderboard {
+.screen-leaderboard,
+.screen-shortcuts {
     display: none;
     position: absolute;
     top: 0;
@@ -182,14 +233,16 @@ body {
 
 .game-container[data-ui="settings"] .screen-settings,
 .game-container[data-ui="initials"] .screen-initials,
-.game-container[data-ui="leaderboard"] .screen-leaderboard {
+.game-container[data-ui="leaderboard"] .screen-leaderboard,
+.game-container[data-ui="shortcuts"] .screen-shortcuts {
     display: flex;
 }
 
 /* Modal overlays on top of other screens */
 .screen-settings,
 .screen-initials,
-.screen-leaderboard {
+.screen-leaderboard,
+.screen-shortcuts {
     z-index: 2;
     background-color: var(--theme-overlay-bg);
 }
@@ -327,8 +380,9 @@ body {
 }
 
 .ui-btn:focus-visible {
-    outline: none;
-    box-shadow: 0 0 0 3px var(--ui-accent-glow);
+    outline: 2px solid var(--ui-accent);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px var(--ui-accent-glow);
 }
 
 /* Primary button */
@@ -730,7 +784,8 @@ body,
 .overlay,
 .screen-settings,
 .screen-initials,
-.screen-leaderboard {
+.screen-leaderboard,
+.screen-shortcuts {
     transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
 
@@ -825,6 +880,74 @@ body,
 /* Theme unlock notification */
 .theme-unlock-notice {
     color: var(--ui-gold);
+}
+
+/* =============================================================================
+   KEYBOARD SHORTCUTS MODAL
+   ============================================================================= */
+
+.screen-shortcuts .ui-panel {
+    max-width: 400px;
+    gap: 0.75rem;
+}
+
+.shortcuts-list {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+}
+
+.shortcuts-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.shortcuts-section__title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--ui-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.25rem;
+}
+
+.shortcut-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.35rem 0;
+}
+
+.shortcut-keys {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex-shrink: 0;
+}
+
+.shortcut-desc {
+    font-size: 0.875rem;
+    color: var(--ui-text-primary);
+    text-align: right;
+}
+
+kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.5rem;
+    padding: 0.2rem 0.4rem;
+    font-family: inherit;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--ui-text-primary);
+    background: var(--ui-glass-bg);
+    border: 1px solid var(--ui-glass-border);
+    border-radius: 4px;
+    box-shadow: 0 1px 0 var(--ui-glass-border);
 }
 
 /* =============================================================================
