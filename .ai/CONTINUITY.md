@@ -1,37 +1,71 @@
 # Continuity
 
 ## Summary
-Browser-based snake game with vanilla JS, canvas rendering, class-based architecture. Building toward v1.0 with themes, difficulty, audio, extended input, and accessibility.
+Browser-based snake game with vanilla JS, canvas rendering, class-based architecture. Two feature branches in progress: audio system and accessibility, both with draft PRs awaiting review.
 
 ## Completed
-- Theme system: 5 themes with score/difficulty-gated unlocks, CSS variable theming, picker UI (PR #38, archived)
-- Animation toggle: smooth 60fps interpolation vs classic grid-snap, settings toggle (PR #40, open)
-- Leaderboard: top-10 local scores, initials entry, celebration (PR #37, merged + archived)
-- OpenSpec tooling migrated from `.claude/commands/openspec/` to multi-agent `opsx` skills
-- 7 v2 feature proposals drafted (game modes, achievements, online leaderboards, multiplayer, replay, daily challenge, snake skins)
+- Difficulty system (PR #43, merged): 3 levels, progressive speed, wall collision, food types, proximity spawning, toxic segment removal
+- Food types: regular (apple), bonus (star), toxic (diamond), lethal (skull) with distinct shapes
+- HTML HUD above canvas: score, length, difficulty, toxic penalty info
+- Grid 25x25, difficulty-scoped leaderboard, landscape rotation overlay
+- Animation toggle, theme system with unlocks
 
 ## In Progress
-- PR #40 (add-animation-toggle) open on `feature/add-animation-toggle`, needs manual testing then merge
+
+### PR #44: Audio System (Draft)
+**Branch**: `feature/add-audio-system`
+**Progress**: 31/37 tasks (remaining are manual testing)
+
+Implemented:
+- AudioManager class with Web Audio API procedural sounds
+- Gameplay sounds: eat, bonus eat, toxic eat, poison appear/disappear, game over
+- Achievement sounds: high score fanfare, theme unlock
+- UI sounds: navigate, confirm, back
+- Volume slider (0-100%) and mute toggle in settings
+- Settings persist to localStorage
+
+### PR #45: Accessibility (Draft)
+**Branch**: `feature/add-accessibility`
+**Progress**: 37/48 tasks
+
+Implemented:
+- Focus trapping in modals with focus restoration on close
+- Keyboard shortcuts help modal (? key)
+- Shape Outlines toggle (colorblind mode) - white borders on food
+- Extended Time Mode toggle - slower speed + no food expiry
+- WCAG 2.3.1 flash rate compliance documented
+- aria-modal on dialogs, tabindex on initials slots
+
+Remaining:
+- Color contrast audit (needs axe/Lighthouse)
+- Custom keybindings (complex, deferred)
+- Manual accessibility testing
 
 ## Blocked
 None
 
 ## Key Files
-- `game.js` - All game code (~1700 lines): Game, Snake, Food, Renderer, InputHandler, UIManager, StorageManager, THEMES
-- `game.test.js` - 192 unit tests
-- `styles.css` - Glassmorphism UI with `--ui-*` and `--theme-*` CSS tokens
-- `openspec/changes/add-audio-system/` - Next up: 34 tasks, fully specced (Web Audio API procedural sounds)
-- `openspec/changes/add-animation-toggle/` - Current: all 24 tasks complete
+- `game.js` - All game code (~2600 lines): Game, Snake, Food, Renderer, InputHandler, UIManager, StorageManager, AudioManager
+- `game.test.js` - Unit tests
+- `styles.css` - Glassmorphism UI, HUD, keyboard shortcuts modal
+- `index.html` - HUD, settings with audio/accessibility toggles, shortcuts modal
+- `openspec/changes/add-audio-system/` - Audio proposal and tasks
+- `openspec/changes/add-accessibility/` - Accessibility proposal and tasks
 
 ## Context
-- Single-file architecture (game.js), no build step
-- Open changes ready to implement: add-audio-system (34 tasks), add-extended-input (31), add-difficulty-system (39), add-accessibility (48)
-- Recommended order: audio system next, then difficulty, extended input, accessibility
+- Single-file architecture, no build step, 25x25 grid at 20px cells
+- Both feature branches pushed to origin with draft PRs
+- Worktrees cleaned up (were at ~/Snake-audio and ~/Snake-accessibility)
 - GitHub project board: N3SSQwiK/projects/4
-- Issue #39 tracks animation toggle, issue #27 (theme system) closed
 
 ## Suggested Prompt
-> PR #40 (add-animation-toggle) is open — do manual testing then merge. After merging, archive the change with `/opsx:archive add-animation-toggle` and close issue #39. Then implement `add-audio-system` next with `/opsx:apply add-audio-system` on a new feature branch. It has 34 tasks covering Web Audio API procedural sound generation, volume/mute controls, and gameplay + UI sound integration.
+> Review and test the two draft PRs:
+> 1. PR #44 (audio): Test volume slider, mute toggle, all gameplay/UI sounds
+> 2. PR #45 (accessibility): Test focus trapping, ? key shortcuts, Shape Outlines toggle, Extended Time Mode
+>
+> After testing, mark PRs ready for review. Consider running Lighthouse accessibility audit for PR #45.
+>
+> Remaining openspec changes available: add-extended-input (31 tasks), add-powerup-system, add-multiplayer-local.
 
 ## Source
-Claude Code | 2026-02-02 16:14 UTC
+Claude Code | 2026-02-04
