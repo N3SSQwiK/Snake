@@ -274,6 +274,133 @@ const DEFAULT_THEME = THEMES.classic;
 const DIFFICULTY_RANKS = { easy: 1, medium: 2, hard: 3 };
 
 // =============================================================================
+// AUDIO MANAGER CLASS
+// =============================================================================
+
+class AudioManager {
+    constructor() {
+        this.audioContext = null;
+        this.masterGain = null;
+        this.volume = 0.5;
+        this.muted = false;
+        this.initialized = false;
+    }
+
+    // Lazy initialization - must be called after user interaction (browser requirement)
+    init() {
+        if (this.initialized) return;
+        try {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            this.masterGain = this.audioContext.createGain();
+            this.masterGain.connect(this.audioContext.destination);
+            this.masterGain.gain.value = this.muted ? 0 : this.volume;
+            this.initialized = true;
+        } catch (e) {
+            console.warn('Web Audio API not supported:', e);
+        }
+    }
+
+    setVolume(value) {
+        this.volume = Math.max(0, Math.min(1, value));
+        if (this.masterGain && !this.muted) {
+            this.masterGain.gain.setTargetAtTime(this.volume, this.audioContext.currentTime, 0.01);
+        }
+    }
+
+    setMuted(muted) {
+        this.muted = muted;
+        if (this.masterGain) {
+            this.masterGain.gain.setTargetAtTime(
+                muted ? 0 : this.volume,
+                this.audioContext.currentTime,
+                0.01
+            );
+        }
+    }
+
+    // Base method for procedural tone generation
+    _playTone(frequency, duration, type = 'sine', attack = 0.01, decay = 0.1) {
+        if (!this.initialized || !this.audioContext) return;
+        if (this.audioContext.state === 'suspended') {
+            this.audioContext.resume();
+        }
+
+        const osc = this.audioContext.createOscillator();
+        const gain = this.audioContext.createGain();
+
+        osc.type = type;
+        osc.frequency.value = frequency;
+        osc.connect(gain);
+        gain.connect(this.masterGain);
+
+        const now = this.audioContext.currentTime;
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(0.3, now + attack);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+
+        osc.start(now);
+        osc.stop(now + duration);
+    }
+
+    _playSequence(notes, noteLength = 0.1, gap = 0.05) {
+        if (!this.initialized || !this.audioContext) return;
+        if (this.audioContext.state === 'suspended') {
+            this.audioContext.resume();
+        }
+
+        notes.forEach((freq, i) => {
+            setTimeout(() => this._playTone(freq, noteLength, 'sine', 0.005, 0.05), i * (noteLength + gap) * 1000);
+        });
+    }
+
+    // Gameplay sounds
+    playEat() {
+        this._playTone(880, 0.08, 'sine', 0.005, 0.03);
+    }
+
+    playBonusEat() {
+        this._playSequence([523, 659, 784], 0.08, 0.02);
+    }
+
+    playPoisonAppear() {
+        this._playTone(220, 0.25, 'sawtooth', 0.01, 0.15);
+    }
+
+    playPoisonDisappear() {
+        this._playSequence([330, 440], 0.1, 0.05);
+    }
+
+    playToxicEat() {
+        this._playTone(150, 0.3, 'sawtooth', 0.01, 0.2);
+    }
+
+    playGameOver() {
+        this._playSequence([392, 330, 262, 196], 0.15, 0.05);
+    }
+
+    playHighScore() {
+        this._playSequence([523, 659, 784, 1047], 0.12, 0.03);
+    }
+
+    playThemeUnlock() {
+        this._playSequence([659, 784, 880, 1047, 1319], 0.1, 0.02);
+    }
+
+    // UI sounds
+    playNavigate() {
+        this._playTone(600, 0.03, 'sine', 0.002, 0.01);
+    }
+
+    playConfirm() {
+        this._playTone(880, 0.1, 'sine', 0.005, 0.05);
+    }
+
+    playBack() {
+        this._playTone(440, 0.08, 'sine', 0.005, 0.04);
+    }
+}
+
+// =============================================================================
 // STORAGE MANAGER CLASS
 // =============================================================================
 
@@ -1214,6 +1341,9 @@ class UIManager {
         this.leaderboardBody = document.getElementById('leaderboard-body');
         this.animationToggle = document.getElementById('animation-style-toggle');
         this.difficultySelector = document.getElementById('difficulty-selector');
+        this.volumeSlider = document.getElementById('volume-slider');
+        this.volumeValue = document.getElementById('volume-value');
+        this.muteToggle = document.getElementById('mute-toggle');
 
         // Initials entry state
         this._initialsChars = [0, 0, 0]; // A=0, B=1, ... Z=25
@@ -1226,10 +1356,48 @@ class UIManager {
         this.animationToggle.setAttribute('aria-checked',
             String(this.game.animationStyle === 'smooth'));
         this.syncDifficultySelector();
+        this.syncAudioControls();
 
         // Event delegation on overlay
         this.handleOverlayClick = this.handleOverlayClick.bind(this);
         this.overlay.addEventListener('click', this.handleOverlayClick);
+
+        // Volume slider event
+        if (this.volumeSlider) {
+            this.volumeSlider.addEventListener('input', (e) => {
+                const value = parseInt(e.target.value, 10) / 100;
+                this.game.setVolume(value);
+                this.volumeValue.textContent = `${e.target.value}%`;
+            });
+        }
+
+        // Attach hover/focus sounds to buttons
+        this._attachButtonSounds();
+    }
+
+    _attachButtonSounds() {
+        const buttons = this.overlay.querySelectorAll('.ui-btn, .ui-toggle, .ui-segmented__option, .theme-swatch, .ui-panel__close');
+        buttons.forEach(btn => {
+            btn.addEventListener('mouseenter', () => {
+                this.game.audio.init();
+                this.game.audio.playNavigate();
+            });
+            btn.addEventListener('focus', () => {
+                this.game.audio.init();
+                this.game.audio.playNavigate();
+            });
+        });
+    }
+
+    syncAudioControls() {
+        if (this.volumeSlider) {
+            const volumePercent = Math.round(this.game.audio.volume * 100);
+            this.volumeSlider.value = volumePercent;
+            this.volumeValue.textContent = `${volumePercent}%`;
+        }
+        if (this.muteToggle) {
+            this.muteToggle.setAttribute('aria-checked', String(this.game.audio.muted));
+        }
     }
 
     updateState(newState) {
@@ -1243,6 +1411,7 @@ class UIManager {
         this.animationToggle.setAttribute('aria-checked',
             String(this.game.animationStyle === 'smooth'));
         this.syncDifficultySelector();
+        this.syncAudioControls();
 
         this.renderThemePicker();
         this.container.setAttribute('data-ui', 'settings');
@@ -1320,6 +1489,7 @@ class UIManager {
             swatch.addEventListener('click', () => {
                 if (!isUnlocked) return;
                 this.game.applyTheme(key);
+                this.game.audio.playConfirm();
                 this.renderThemePicker();
             });
 
@@ -1628,6 +1798,9 @@ class UIManager {
     }
 
     handleOverlayClick(event) {
+        // Initialize audio on any user interaction
+        this.game.audio.init();
+
         // Check for difficulty selector click (no data-action)
         const diffOption = event.target.closest('.ui-segmented__option[data-difficulty]');
         if (diffOption && diffOption.dataset.difficulty) {
@@ -1635,6 +1808,7 @@ class UIManager {
             if (this.game.state === GameState.PLAYING || this.game.state === GameState.PAUSED) return;
             this.game.setDifficulty(diffOption.dataset.difficulty);
             this.syncDifficultySelector();
+            this.game.audio.playConfirm();
             return;
         }
 
@@ -1643,27 +1817,34 @@ class UIManager {
 
         switch (action.dataset.action) {
             case 'play':
+                this.game.audio.playConfirm();
                 this.game.reset();
                 this.game.setState(GameState.PLAYING);
                 break;
             case 'settings':
+                this.game.audio.playConfirm();
                 this.showSettings();
                 break;
             case 'highscores':
+                this.game.audio.playConfirm();
                 this.showLeaderboard();
                 break;
             case 'resume':
+                this.game.audio.playConfirm();
                 this.game.setState(GameState.PLAYING);
                 break;
             case 'quit':
+                this.game.audio.playBack();
                 this.game.reset();
                 this.game.setState(GameState.MENU);
                 break;
             case 'restart':
+                this.game.audio.playConfirm();
                 this.game.reset();
                 this.game.setState(GameState.PLAYING);
                 break;
             case 'menu':
+                this.game.audio.playBack();
                 this.game.reset();
                 this.game.setState(GameState.MENU);
                 break;
@@ -1671,18 +1852,30 @@ class UIManager {
                 const newStyle = this.game.animationStyle === 'smooth' ? 'classic' : 'smooth';
                 this.game.setAnimationStyle(newStyle);
                 this.animationToggle.setAttribute('aria-checked', String(newStyle === 'smooth'));
+                this.game.audio.playConfirm();
+                break;
+            }
+            case 'toggle-mute': {
+                const newMuted = !this.game.audio.muted;
+                this.game.setMuted(newMuted);
+                this.muteToggle.setAttribute('aria-checked', String(newMuted));
+                if (!newMuted) this.game.audio.playConfirm();
                 break;
             }
             case 'settings-back':
+                this.game.audio.playBack();
                 this.hideSettings();
                 break;
             case 'submit-initials':
+                this.game.audio.playConfirm();
                 this._submitInitials();
                 break;
             case 'skip-initials':
+                this.game.audio.playBack();
                 this.hideInitials();
                 break;
             case 'leaderboard-back':
+                this.game.audio.playBack();
                 this.hideLeaderboard();
                 break;
         }
@@ -1742,6 +1935,11 @@ class Game {
         this.currentTheme = this.storage.get('theme', 'classic');
         this.applyTheme(this.currentTheme);
 
+        // Initialize audio manager with saved settings
+        this.audio = new AudioManager();
+        this.audio.volume = this.storage.get('audioVolume', 0.5);
+        this.audio.muted = this.storage.get('audioMuted', false);
+
         // Initialize input handler
         this.inputHandler = new InputHandler(canvas, () => this.snake.direction);
 
@@ -1779,6 +1977,15 @@ class Game {
         const newThemes = this.storage.checkThemeUnlocks(this.score, this.difficulty);
         if (this.ui && newThemes.length > 0) {
             this.ui.showThemeUnlockNotification(newThemes);
+            this.audio.playThemeUnlock();
+        }
+
+        // Play high score or game over sound
+        const isNewTopScore = this.storage.isNewTopScore(this.score, this.difficulty);
+        if (isNewTopScore && this.score > 0) {
+            this.audio.playHighScore();
+        } else {
+            this.audio.playGameOver();
         }
 
         this.setState(GameState.GAMEOVER);
@@ -1806,6 +2013,16 @@ class Game {
     setAnimationStyle(style) {
         this.animationStyle = style;
         this.storage.set('animationStyle', style);
+    }
+
+    setVolume(value) {
+        this.audio.setVolume(value);
+        this.storage.set('audioVolume', this.audio.volume);
+    }
+
+    setMuted(muted) {
+        this.audio.setMuted(muted);
+        this.storage.set('audioMuted', muted);
     }
 
     applyTheme(themeName) {
@@ -1977,6 +2194,7 @@ class Game {
             this.score += this.food.points;
             this.snake.grow();
             this.updateTickRate();
+            this.audio.playEat();
             this.food.spawn(this.snake.body, this.tickCount);
         }
 
@@ -1995,6 +2213,7 @@ class Game {
                     this.score += 25;
                     this.snake.grow();
                     this.updateTickRate();
+                    this.audio.playBonusEat();
                     break;
                 case FoodType.TOXIC: {
                     // Deduct points (never go negative)
@@ -2002,6 +2221,7 @@ class Game {
                     // Remove segments
                     const segmentsToRemove = this.calculateToxicSegments();
                     this.snake.removeSegments(segmentsToRemove);
+                    this.audio.playToxicEat();
                     // Game over if only head remains
                     if (this.snake.body.length <= 1) {
                         this.specialFood.reset();
@@ -2021,6 +2241,10 @@ class Game {
 
         // Check special food expiry
         if (this.specialFood.position && this.specialFood.isExpired(this.tickCount)) {
+            // Play relief sound when hazard food expires
+            if (this.specialFood.foodType === FoodType.TOXIC || this.specialFood.foodType === FoodType.LETHAL) {
+                this.audio.playPoisonDisappear();
+            }
             this.specialFood.reset();
         }
 
@@ -2034,14 +2258,18 @@ class Game {
 
             if (roll < diffConfig.lethalFoodChance) {
                 // Try proximity spawn first, fall back to random if it fails
-                if (!(goodFoodPos && prox && this.specialFood.spawnNearTarget(goodFoodPos, prox.min, prox.max, excludePositions, this.tickCount, FoodType.LETHAL, SPECIAL_FOOD_TICKS))) {
-                    this.specialFood.spawn(excludePositions, this.tickCount, FoodType.LETHAL, SPECIAL_FOOD_TICKS);
+                let spawned = goodFoodPos && prox && this.specialFood.spawnNearTarget(goodFoodPos, prox.min, prox.max, excludePositions, this.tickCount, FoodType.LETHAL, SPECIAL_FOOD_TICKS);
+                if (!spawned) {
+                    spawned = this.specialFood.spawn(excludePositions, this.tickCount, FoodType.LETHAL, SPECIAL_FOOD_TICKS);
                 }
+                if (spawned) this.audio.playPoisonAppear();
             } else if (roll < diffConfig.lethalFoodChance + diffConfig.toxicFoodChance) {
                 // Try proximity spawn first, fall back to random if it fails
-                if (!(goodFoodPos && prox && this.specialFood.spawnNearTarget(goodFoodPos, prox.min, prox.max, excludePositions, this.tickCount, FoodType.TOXIC, SPECIAL_FOOD_TICKS))) {
-                    this.specialFood.spawn(excludePositions, this.tickCount, FoodType.TOXIC, SPECIAL_FOOD_TICKS);
+                let spawned = goodFoodPos && prox && this.specialFood.spawnNearTarget(goodFoodPos, prox.min, prox.max, excludePositions, this.tickCount, FoodType.TOXIC, SPECIAL_FOOD_TICKS);
+                if (!spawned) {
+                    spawned = this.specialFood.spawn(excludePositions, this.tickCount, FoodType.TOXIC, SPECIAL_FOOD_TICKS);
                 }
+                if (spawned) this.audio.playPoisonAppear();
             } else if (roll < diffConfig.lethalFoodChance + diffConfig.toxicFoodChance + diffConfig.bonusFoodChance) {
                 this.specialFood.spawn(excludePositions, this.tickCount, FoodType.BONUS, SPECIAL_FOOD_TICKS);
             }
@@ -2268,7 +2496,7 @@ if (typeof document !== 'undefined') {
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
-        Game, Renderer, Snake, Food, InputHandler, StorageManager, UIManager,
+        Game, Renderer, Snake, Food, InputHandler, StorageManager, UIManager, AudioManager,
         GameState, Direction, FoodType,
         GRID_WIDTH, GRID_HEIGHT, CELL_SIZE,
         FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_MAX_SPAWN_ATTEMPTS,
