@@ -135,6 +135,24 @@
                             </span>
                         </button>
                     </div>
+                    <div class="ui-setting-group">
+                        <label class="ui-label">Sound</label>
+                        <div class="ui-setting-row">
+                            <label class="ui-label ui-label--small" for="volume-slider">Volume</label>
+                            <div class="ui-slider-row">
+                                <input type="range" id="volume-slider" class="ui-slider" min="0" max="100" value="50" aria-label="Volume">
+                                <span class="ui-slider-value" id="volume-value">50%</span>
+                            </div>
+                        </div>
+                        <div class="ui-setting-row">
+                            <label class="ui-label ui-label--small" for="mute-toggle">Mute</label>
+                            <button class="ui-toggle" id="mute-toggle" role="switch" aria-checked="false" data-action="toggle-mute">
+                                <span class="ui-toggle__track">
+                                    <span class="ui-toggle__thumb"></span>
+                                </span>
+                            </button>
+                        </div>
+                    </div>
                     <div class="theme-picker">
                         <label class="ui-label">Theme</label>
                         <div class="theme-picker__grid" id="theme-picker-grid"></div>
