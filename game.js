@@ -43,6 +43,10 @@ const FoodType = {
 // Special food timer (ticks before despawn)
 const SPECIAL_FOOD_TICKS = 60; // 6s at 10Hz
 
+// Extended Time Mode: doubled timers for accessibility
+const FOOD_DECAY_TICKS_ACCESSIBLE = 200;    // 20s at 10Hz (2x normal)
+const SPECIAL_FOOD_TICKS_ACCESSIBLE = 120;  // 12s at 10Hz (2x normal)
+
 // Difficulty levels
 const DIFFICULTY_LEVELS = {
     easy: {
@@ -474,19 +478,22 @@ class StorageManager {
         }
     }
 
-    getLeaderboard(difficulty) {
+    getLeaderboard(difficulty, assisted = false) {
         const board = this.get('leaderboard', []);
-        if (!difficulty) return board;
-        return board.filter(e => e.difficulty === difficulty || !e.difficulty);
+        // Filter by assisted flag (legacy entries without field are non-assisted)
+        const filtered = board.filter(e => !!(e.assisted) === assisted);
+        if (!difficulty) return filtered;
+        return filtered.filter(e => e.difficulty === difficulty || !e.difficulty);
     }
 
-    addScore(initials, score, difficulty) {
+    addScore(initials, score, difficulty, assisted = false) {
         const sanitized = String(initials).toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) || 'AAA';
         const validScore = typeof score === 'number' && score >= 0 ? Math.floor(score) : 0;
         const entry = {
             initials: sanitized,
             score: validScore,
             difficulty: difficulty || undefined,
+            assisted: assisted || undefined,
             timestamp: Date.now()
         };
         // Store all entries together, cap at 10 per difficulty
@@ -500,13 +507,13 @@ class StorageManager {
         this.set('leaderboard', allEntries.slice(0, 50));
     }
 
-    isHighScore(score, difficulty) {
-        const board = this.getLeaderboard(difficulty).slice(0, 10);
+    isHighScore(score, difficulty, assisted = false) {
+        const board = this.getLeaderboard(difficulty, assisted).slice(0, 10);
         return board.length < 10 || score > board[board.length - 1].score;
     }
 
-    isNewTopScore(score, difficulty) {
-        const board = this.getLeaderboard(difficulty);
+    isNewTopScore(score, difficulty, assisted = false) {
+        const board = this.getLeaderboard(difficulty, assisted);
         return board.length === 0 || score > board[0].score;
     }
 
@@ -998,7 +1005,7 @@ class Renderer {
         this.ctx.fill();
     }
 
-    drawFood(food, isDecayWarning, currentTick, colorblindMode = false) {
+    drawFood(food, isDecayWarning, currentTick, colorblindMode = false, reducedMotion = false) {
         if (!food.position) {
             return;
         }
@@ -1012,13 +1019,13 @@ class Renderer {
 
         switch (food.foodType) {
             case FoodType.BONUS:
-                this._drawBonusFood(food, currentTick, colorblindMode);
+                this._drawBonusFood(food, currentTick, colorblindMode, reducedMotion);
                 break;
             case FoodType.TOXIC:
                 this._drawToxicFood(food, currentTick, colorblindMode);
                 break;
             case FoodType.LETHAL:
-                this._drawLethalFood(food, currentTick, colorblindMode);
+                this._drawLethalFood(food, currentTick, colorblindMode, reducedMotion);
                 break;
             default:
                 this._drawRegularFood(food, colorblindMode);
@@ -1076,15 +1083,15 @@ class Renderer {
         this.ctx.fill();
     }
 
-    _drawBonusFood(food, currentTick, colorblindMode = false) {
+    _drawBonusFood(food, currentTick, colorblindMode = false, reducedMotion = false) {
         const x = food.position.x * CELL_SIZE;
         const y = food.position.y * CELL_SIZE;
         const size = CELL_SIZE;
         const cx = x + size / 2;
         const cy = y + size / 2;
 
-        // Subtle rotation pulse
-        const pulse = 1 + 0.08 * Math.sin(currentTick * 0.3);
+        // Subtle rotation pulse (disabled in reduced motion)
+        const pulse = reducedMotion ? 1.0 : 1 + 0.08 * Math.sin(currentTick * 0.3);
 
         this.ctx.shadowColor = this.theme.colors.bonusFood;
         this.ctx.shadowBlur = 10;
@@ -1153,15 +1160,15 @@ class Renderer {
         this.ctx.fill();
     }
 
-    _drawLethalFood(food, currentTick, colorblindMode = false) {
+    _drawLethalFood(food, currentTick, colorblindMode = false, reducedMotion = false) {
         const x = food.position.x * CELL_SIZE;
         const y = food.position.y * CELL_SIZE;
         const size = CELL_SIZE;
         const cx = x + size / 2;
         const cy = y + size / 2;
 
-        // Pulsing danger
-        const pulse = 0.85 + 0.15 * Math.sin(currentTick * 0.5);
+        // Pulsing danger (disabled in reduced motion)
+        const pulse = reducedMotion ? 1.0 : 0.85 + 0.15 * Math.sin(currentTick * 0.5);
 
         this.ctx.shadowColor = this.theme.colors.poisonFood;
         this.ctx.shadowBlur = 12;
@@ -1429,6 +1436,10 @@ class UIManager {
         // Sync toggles with stored values on init
         this.animationToggle.setAttribute('aria-checked',
             String(this.game.animationStyle === 'smooth'));
+        if (this.game.reducedMotion) {
+            this.animationToggle.setAttribute('disabled', '');
+            this.animationToggle.setAttribute('aria-disabled', 'true');
+        }
         if (this.reduceMotionToggle) {
             this.reduceMotionToggle.setAttribute('aria-checked',
                 String(this.game.reducedMotion || false));
@@ -1573,6 +1584,13 @@ class UIManager {
         // Sync toggles with current values
         this.animationToggle.setAttribute('aria-checked',
             String(this.game.animationStyle === 'smooth'));
+        if (this.game.reducedMotion) {
+            this.animationToggle.setAttribute('disabled', '');
+            this.animationToggle.setAttribute('aria-disabled', 'true');
+        } else {
+            this.animationToggle.removeAttribute('disabled');
+            this.animationToggle.removeAttribute('aria-disabled');
+        }
         if (this.reduceMotionToggle) {
             this.reduceMotionToggle.setAttribute('aria-checked',
                 String(this.game.reducedMotion || false));
@@ -1883,8 +1901,9 @@ class UIManager {
     _submitInitials() {
         const initials = this._initialsChars.map(c => String.fromCharCode(65 + c)).join('');
         const difficulty = this.game.difficulty;
-        const wasTopScore = this._initialsStorage.isNewTopScore(this._initialsScore, difficulty);
-        this._initialsStorage.addScore(initials, this._initialsScore, difficulty);
+        const assisted = this.game.accessibilityMode || false;
+        const wasTopScore = this._initialsStorage.isNewTopScore(this._initialsScore, difficulty, assisted);
+        this._initialsStorage.addScore(initials, this._initialsScore, difficulty, assisted);
         this.hideInitials();
         // Refresh game-over screen with updated best score
         this.updateScore(this._initialsScore);
@@ -1932,13 +1951,15 @@ class UIManager {
 
         // Update heading
         const heading = this.leaderboardBody.closest('.ui-panel')?.querySelector('.ui-heading');
+        const assisted = this.game.accessibilityMode || false;
 
         if (midGame) {
             // Filtered view: single list for current difficulty
             const diffName = (DIFFICULTY_LEVELS[this.game.difficulty] || {}).name || this.game.difficulty;
-            if (heading) heading.textContent = `High Scores \u2014 ${diffName}`;
+            const suffix = assisted ? ' (Extended Time)' : '';
+            if (heading) heading.textContent = `High Scores \u2014 ${diffName}${suffix}`;
 
-            const board = this.game.storage.getLeaderboard(this.game.difficulty).slice(0, 10);
+            const board = this.game.storage.getLeaderboard(this.game.difficulty, assisted).slice(0, 10);
             if (board.length === 0) {
                 const empty = document.createElement('p');
                 empty.className = 'leaderboard-empty';
@@ -1951,7 +1972,7 @@ class UIManager {
             // Grouped view: sections for Hard, Medium, Easy, then Unranked
             if (heading) heading.textContent = 'High Scores';
 
-            const allEntries = this.game.storage.getLeaderboard();
+            const standardEntries = this.game.storage.getLeaderboard(null, false);
             const groups = [
                 { key: 'hard', name: 'Hard' },
                 { key: 'medium', name: 'Medium' },
@@ -1960,7 +1981,7 @@ class UIManager {
 
             let hasAny = false;
             for (const group of groups) {
-                const entries = allEntries
+                const entries = standardEntries
                     .filter(e => e.difficulty === group.key)
                     .slice(0, 10);
                 if (entries.length === 0) continue;
@@ -1975,7 +1996,7 @@ class UIManager {
             }
 
             // Legacy entries (no difficulty)
-            const legacy = allEntries.filter(e => !e.difficulty).slice(0, 10);
+            const legacy = standardEntries.filter(e => !e.difficulty).slice(0, 10);
             if (legacy.length > 0) {
                 hasAny = true;
                 const sectionHeader = document.createElement('div');
@@ -1984,6 +2005,23 @@ class UIManager {
                 this.leaderboardBody.appendChild(sectionHeader);
 
                 this._renderLeaderboardRows(legacy, this.leaderboardBody);
+            }
+
+            // Extended Time Mode sections (separate from standard)
+            const assistedEntries = this.game.storage.getLeaderboard(null, true);
+            for (const group of groups) {
+                const entries = assistedEntries
+                    .filter(e => e.difficulty === group.key)
+                    .slice(0, 10);
+                if (entries.length === 0) continue;
+                hasAny = true;
+
+                const sectionHeader = document.createElement('div');
+                sectionHeader.className = 'leaderboard-section-header';
+                sectionHeader.textContent = `${group.name} (Extended Time)`;
+                this.leaderboardBody.appendChild(sectionHeader);
+
+                this._renderLeaderboardRows(entries, this.leaderboardBody);
             }
 
             if (!hasAny) {
@@ -2063,6 +2101,7 @@ class UIManager {
                 this.game.setState(GameState.MENU);
                 break;
             case 'toggle-animation-style': {
+                if (this.game.reducedMotion) break;
                 const newStyle = this.game.animationStyle === 'smooth' ? 'classic' : 'smooth';
                 this.game.setAnimationStyle(newStyle);
                 this.animationToggle.setAttribute('aria-checked', String(newStyle === 'smooth'));
@@ -2082,6 +2121,11 @@ class UIManager {
                 this.reduceMotionToggle.setAttribute('aria-checked', String(newReducedMotion));
                 if (newReducedMotion) {
                     this.animationToggle.setAttribute('aria-checked', 'false');
+                    this.animationToggle.setAttribute('disabled', '');
+                    this.animationToggle.setAttribute('aria-disabled', 'true');
+                } else {
+                    this.animationToggle.removeAttribute('disabled');
+                    this.animationToggle.removeAttribute('aria-disabled');
                 }
                 break;
             }
@@ -2238,7 +2282,8 @@ class Game {
         }
 
         // Play high score or game over sound
-        const isNewTopScore = this.storage.isNewTopScore(this.score, this.difficulty);
+        const assisted = this.accessibilityMode || false;
+        const isNewTopScore = this.storage.isNewTopScore(this.score, this.difficulty, assisted);
         if (isNewTopScore && this.score > 0) {
             this.audio.playHighScore();
         } else {
@@ -2246,7 +2291,7 @@ class Game {
         }
 
         // Screen reader announcement
-        const isNewHighScore = this.storage.isHighScore(this.score, this.difficulty);
+        const isNewHighScore = this.storage.isHighScore(this.score, this.difficulty, assisted);
         if (isNewTopScore && this.score > 0) {
             this.announce(`Game over! New high score: ${this.score} points!`, 'assertive');
         } else if (isNewHighScore && this.score > 0) {
@@ -2257,7 +2302,7 @@ class Game {
 
         this.setState(GameState.GAMEOVER);
 
-        if (this.ui && this.score > 0 && this.storage.isHighScore(this.score, this.difficulty)) {
+        if (this.ui && this.score > 0 && this.storage.isHighScore(this.score, this.difficulty, assisted)) {
             this.ui.showInitials(this.score, this.storage);
         }
     }
@@ -2411,12 +2456,20 @@ class Game {
         const speedUps = Math.floor(this.score / config.speedScoreStep);
         let newRate = Math.min(config.baseTickRate + speedUps, config.maxTickRate);
 
-        // Accessibility mode: reduce speed by 30% for more reaction time
+        // Extended Time Mode: cap speed at Easy base rate (8 ticks/s)
         if (this.accessibilityMode) {
-            newRate = Math.max(newRate * 0.7, config.baseTickRate * 0.7);
+            newRate = Math.min(newRate, DIFFICULTY_LEVELS.easy.baseTickRate);
         }
 
         this.tickInterval = 1000 / newRate;
+    }
+
+    _getRegularDecay() {
+        return this.accessibilityMode ? FOOD_DECAY_TICKS_ACCESSIBLE : FOOD_DECAY_TICKS;
+    }
+
+    _getSpecialDecay() {
+        return this.accessibilityMode ? SPECIAL_FOOD_TICKS_ACCESSIBLE : SPECIAL_FOOD_TICKS;
     }
 
     calculateToxicPenalty() {
@@ -2500,7 +2553,7 @@ class Game {
 
         // Spawn initial food if none exists
         if (!this.food.position) {
-            this.food.spawn(this.snake.body, this.tickCount);
+            this.food.spawn(this.snake.body, this.tickCount, FoodType.REGULAR, this._getRegularDecay());
         }
 
         // Check regular food collision
@@ -2510,12 +2563,12 @@ class Game {
             this.updateTickRate();
             this.audio.playEat();
             this.announceScore(this.score);
-            this.food.spawn(this.snake.body, this.tickCount);
+            this.food.spawn(this.snake.body, this.tickCount, FoodType.REGULAR, this._getRegularDecay());
         }
 
-        // Check food decay (disabled in accessibility mode - food doesn't expire)
-        if (!this.accessibilityMode && this.food.isExpired(this.tickCount)) {
-            this.food.spawn(this.snake.body, this.tickCount);
+        // Check food decay (Extended Time Mode uses doubled timers)
+        if (this.food.isExpired(this.tickCount)) {
+            this.food.spawn(this.snake.body, this.tickCount, FoodType.REGULAR, this._getRegularDecay());
         }
 
         // Special food logic
@@ -2555,8 +2608,8 @@ class Game {
             this.specialFood.reset();
         }
 
-        // Check special food expiry (disabled in accessibility mode - food doesn't expire)
-        if (!this.accessibilityMode && this.specialFood.position && this.specialFood.isExpired(this.tickCount)) {
+        // Check special food expiry (Extended Time Mode uses doubled timers)
+        if (this.specialFood.position && this.specialFood.isExpired(this.tickCount)) {
             // Play relief sound when hazard food expires
             if (this.specialFood.foodType === FoodType.TOXIC || this.specialFood.foodType === FoodType.LETHAL) {
                 this.audio.playPoisonDisappear();
@@ -2572,22 +2625,23 @@ class Game {
             const goodFoodPos = this.food.position;
             const prox = diffConfig.hazardProximity;
 
+            const specialDecay = this._getSpecialDecay();
             if (roll < diffConfig.lethalFoodChance) {
                 // Try proximity spawn first, fall back to random if it fails
-                let spawned = goodFoodPos && prox && this.specialFood.spawnNearTarget(goodFoodPos, prox.min, prox.max, excludePositions, this.tickCount, FoodType.LETHAL, SPECIAL_FOOD_TICKS);
+                let spawned = goodFoodPos && prox && this.specialFood.spawnNearTarget(goodFoodPos, prox.min, prox.max, excludePositions, this.tickCount, FoodType.LETHAL, specialDecay);
                 if (!spawned) {
-                    spawned = this.specialFood.spawn(excludePositions, this.tickCount, FoodType.LETHAL, SPECIAL_FOOD_TICKS);
+                    spawned = this.specialFood.spawn(excludePositions, this.tickCount, FoodType.LETHAL, specialDecay);
                 }
                 if (spawned) this.audio.playPoisonAppear();
             } else if (roll < diffConfig.lethalFoodChance + diffConfig.toxicFoodChance) {
                 // Try proximity spawn first, fall back to random if it fails
-                let spawned = goodFoodPos && prox && this.specialFood.spawnNearTarget(goodFoodPos, prox.min, prox.max, excludePositions, this.tickCount, FoodType.TOXIC, SPECIAL_FOOD_TICKS);
+                let spawned = goodFoodPos && prox && this.specialFood.spawnNearTarget(goodFoodPos, prox.min, prox.max, excludePositions, this.tickCount, FoodType.TOXIC, specialDecay);
                 if (!spawned) {
-                    spawned = this.specialFood.spawn(excludePositions, this.tickCount, FoodType.TOXIC, SPECIAL_FOOD_TICKS);
+                    spawned = this.specialFood.spawn(excludePositions, this.tickCount, FoodType.TOXIC, specialDecay);
                 }
                 if (spawned) this.audio.playPoisonAppear();
             } else if (roll < diffConfig.lethalFoodChance + diffConfig.toxicFoodChance + diffConfig.bonusFoodChance) {
-                this.specialFood.spawn(excludePositions, this.tickCount, FoodType.BONUS, SPECIAL_FOOD_TICKS);
+                this.specialFood.spawn(excludePositions, this.tickCount, FoodType.BONUS, specialDecay);
             }
         }
     }
@@ -2608,12 +2662,12 @@ class Game {
             // Draw food (only when playing or paused)
             if (this.state !== GameState.GAMEOVER) {
                 const isDecayWarning = this.food.isDecayWarning(this.tickCount);
-                this.renderer.drawFood(this.food, isDecayWarning, this.tickCount, this.colorblindMode);
+                this.renderer.drawFood(this.food, isDecayWarning, this.tickCount, this.colorblindMode, this.reducedMotion);
 
                 // Draw special food
                 if (this.specialFood.position) {
                     const specialDecayWarning = this.specialFood.isDecayWarning(this.tickCount);
-                    this.renderer.drawFood(this.specialFood, specialDecayWarning, this.tickCount, this.colorblindMode);
+                    this.renderer.drawFood(this.specialFood, specialDecayWarning, this.tickCount, this.colorblindMode, this.reducedMotion);
                 }
             }
 
@@ -2833,7 +2887,7 @@ if (typeof module !== 'undefined' && module.exports) {
         Game, Renderer, Snake, Food, InputHandler, StorageManager, UIManager, AudioManager,
         GameState, Direction, FoodType,
         GRID_WIDTH, GRID_HEIGHT, CELL_SIZE,
-        FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_MAX_SPAWN_ATTEMPTS,
-        SPECIAL_FOOD_TICKS, DIFFICULTY_LEVELS
+        FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_DECAY_TICKS_ACCESSIBLE, FOOD_MAX_SPAWN_ATTEMPTS,
+        SPECIAL_FOOD_TICKS, SPECIAL_FOOD_TICKS_ACCESSIBLE, DIFFICULTY_LEVELS
     };
 }

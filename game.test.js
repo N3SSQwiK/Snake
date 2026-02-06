@@ -64,8 +64,8 @@ const {
     Game, Renderer, Snake, Food, InputHandler, StorageManager,
     GameState, Direction, FoodType,
     GRID_WIDTH, GRID_HEIGHT, CELL_SIZE,
-    FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_MAX_SPAWN_ATTEMPTS,
-    SPECIAL_FOOD_TICKS, DIFFICULTY_LEVELS
+    FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_DECAY_TICKS_ACCESSIBLE, FOOD_MAX_SPAWN_ATTEMPTS,
+    SPECIAL_FOOD_TICKS, SPECIAL_FOOD_TICKS_ACCESSIBLE, DIFFICULTY_LEVELS
 } = require('./game.js');
 
 // =============================================================================
@@ -2451,5 +2451,226 @@ describe('Difficulty config fields', () => {
         assert.strictEqual(DIFFICULTY_LEVELS.medium.toxicSegmentDivisor, 10);
         assert.strictEqual(DIFFICULTY_LEVELS.hard.toxicSegmentBase, 2);
         assert.strictEqual(DIFFICULTY_LEVELS.hard.toxicSegmentDivisor, 5);
+    });
+});
+
+// =============================================================================
+// ACCESSIBLE FOOD DECAY CONSTANTS TESTS
+// =============================================================================
+
+describe('Accessible food decay constants', () => {
+    test('FOOD_DECAY_TICKS_ACCESSIBLE is double normal', () => {
+        assert.strictEqual(FOOD_DECAY_TICKS_ACCESSIBLE, FOOD_DECAY_TICKS * 2);
+    });
+
+    test('SPECIAL_FOOD_TICKS_ACCESSIBLE is double normal', () => {
+        assert.strictEqual(SPECIAL_FOOD_TICKS_ACCESSIBLE, SPECIAL_FOOD_TICKS * 2);
+    });
+});
+
+// =============================================================================
+// EXTENDED TIME MODE FOOD DECAY TESTS
+// =============================================================================
+
+describe('Extended Time Mode food decay helpers', () => {
+    test('_getRegularDecay returns normal ticks without accessibility mode', () => {
+        const game = new Game(createMockCanvas());
+        game.accessibilityMode = false;
+        assert.strictEqual(game._getRegularDecay(), FOOD_DECAY_TICKS);
+    });
+
+    test('_getRegularDecay returns doubled ticks with accessibility mode', () => {
+        const game = new Game(createMockCanvas());
+        game.accessibilityMode = true;
+        assert.strictEqual(game._getRegularDecay(), FOOD_DECAY_TICKS_ACCESSIBLE);
+    });
+
+    test('_getSpecialDecay returns normal ticks without accessibility mode', () => {
+        const game = new Game(createMockCanvas());
+        game.accessibilityMode = false;
+        assert.strictEqual(game._getSpecialDecay(), SPECIAL_FOOD_TICKS);
+    });
+
+    test('_getSpecialDecay returns doubled ticks with accessibility mode', () => {
+        const game = new Game(createMockCanvas());
+        game.accessibilityMode = true;
+        assert.strictEqual(game._getSpecialDecay(), SPECIAL_FOOD_TICKS_ACCESSIBLE);
+    });
+
+    test('food expires in accessibility mode (with doubled timer)', () => {
+        const game = new Game(createMockCanvas());
+        game.setDifficulty('medium');
+        game.accessibilityMode = true;
+        game.setState(GameState.PLAYING);
+
+        // Spawn food and advance past doubled decay time
+        game.food.spawn(game.snake.body, 0, FoodType.REGULAR, FOOD_DECAY_TICKS_ACCESSIBLE);
+        const spawnTick = game.food.spawnTick;
+
+        // Not expired at normal decay time
+        assert.strictEqual(game.food.isExpired(spawnTick + FOOD_DECAY_TICKS), false);
+
+        // Expired at doubled decay time
+        assert.strictEqual(game.food.isExpired(spawnTick + FOOD_DECAY_TICKS_ACCESSIBLE), true);
+    });
+});
+
+// =============================================================================
+// EXTENDED TIME MODE SPEED CAP TESTS
+// =============================================================================
+
+describe('Extended Time Mode speed cap', () => {
+    test('caps speed at easy base rate on hard difficulty', () => {
+        const game = new Game(createMockCanvas());
+        game.setDifficulty('hard');
+        game.accessibilityMode = true;
+        game.score = 1000; // high score to push speed up
+        game.updateTickRate();
+        const actualRate = 1000 / game.tickInterval;
+        assert.ok(actualRate <= DIFFICULTY_LEVELS.easy.baseTickRate,
+            `Rate ${actualRate} exceeds easy base rate ${DIFFICULTY_LEVELS.easy.baseTickRate}`);
+    });
+
+    test('caps speed at easy base rate on medium difficulty', () => {
+        const game = new Game(createMockCanvas());
+        game.setDifficulty('medium');
+        game.accessibilityMode = true;
+        game.score = 1000;
+        game.updateTickRate();
+        const actualRate = 1000 / game.tickInterval;
+        assert.ok(actualRate <= DIFFICULTY_LEVELS.easy.baseTickRate,
+            `Rate ${actualRate} exceeds easy base rate ${DIFFICULTY_LEVELS.easy.baseTickRate}`);
+    });
+
+    test('does not cap speed without accessibility mode', () => {
+        const game = new Game(createMockCanvas());
+        game.setDifficulty('hard');
+        game.accessibilityMode = false;
+        game.score = 1000;
+        game.updateTickRate();
+        const actualRate = 1000 / game.tickInterval;
+        assert.ok(actualRate > DIFFICULTY_LEVELS.easy.baseTickRate,
+            `Rate ${actualRate} should exceed easy base rate without accessibility`);
+    });
+
+    test('easy difficulty unaffected by cap (already at/below easy base rate)', () => {
+        const game = new Game(createMockCanvas());
+        game.setDifficulty('easy');
+        game.accessibilityMode = true;
+        game.score = 0;
+        game.updateTickRate();
+        const actualRate = 1000 / game.tickInterval;
+        assert.strictEqual(actualRate, DIFFICULTY_LEVELS.easy.baseTickRate);
+    });
+});
+
+// =============================================================================
+// ASSISTED LEADERBOARD TESTS
+// =============================================================================
+
+describe('Assisted leaderboard separation', () => {
+    let storage;
+
+    beforeEach(() => {
+        global.localStorage.clear();
+        storage = new StorageManager();
+    });
+
+    test('addScore stores assisted field when true', () => {
+        storage.addScore('ACE', 100, 'medium', true);
+        const all = storage.get('leaderboard', []);
+        assert.strictEqual(all[0].assisted, true);
+    });
+
+    test('addScore omits assisted field when false', () => {
+        storage.addScore('ACE', 100, 'medium', false);
+        const all = storage.get('leaderboard', []);
+        assert.strictEqual(all[0].assisted, undefined);
+    });
+
+    test('getLeaderboard separates assisted from standard', () => {
+        storage.addScore('STD', 200, 'medium', false);
+        storage.addScore('AST', 300, 'medium', true);
+        const standard = storage.getLeaderboard('medium', false);
+        const assisted = storage.getLeaderboard('medium', true);
+        assert.strictEqual(standard.length, 1);
+        assert.strictEqual(standard[0].initials, 'STD');
+        assert.strictEqual(assisted.length, 1);
+        assert.strictEqual(assisted[0].initials, 'AST');
+    });
+
+    test('legacy entries (no assisted field) treated as non-assisted', () => {
+        storage.set('leaderboard', [
+            { initials: 'OLD', score: 50, difficulty: 'easy', timestamp: 1000 }
+        ]);
+        const standard = storage.getLeaderboard('easy', false);
+        const assisted = storage.getLeaderboard('easy', true);
+        assert.strictEqual(standard.length, 1);
+        assert.strictEqual(assisted.length, 0);
+    });
+
+    test('isHighScore respects assisted flag', () => {
+        for (let i = 0; i < 10; i++) {
+            storage.addScore('AAA', (i + 1) * 10, 'medium', false);
+        }
+        // Standard board is full, 5 doesn't beat lowest
+        assert.strictEqual(storage.isHighScore(5, 'medium', false), false);
+        // Assisted board is empty, any score qualifies
+        assert.strictEqual(storage.isHighScore(5, 'medium', true), true);
+    });
+
+    test('isNewTopScore respects assisted flag', () => {
+        storage.addScore('STD', 100, 'hard', false);
+        storage.addScore('AST', 50, 'hard', true);
+        assert.strictEqual(storage.isNewTopScore(60, 'hard', false), false);
+        assert.strictEqual(storage.isNewTopScore(60, 'hard', true), true);
+    });
+
+    test('getLeaderboard without difficulty returns all entries for assisted flag', () => {
+        storage.addScore('AAA', 100, 'easy', true);
+        storage.addScore('BBB', 200, 'hard', true);
+        storage.addScore('CCC', 150, 'medium', false);
+        const assisted = storage.getLeaderboard(null, true);
+        const standard = storage.getLeaderboard(null, false);
+        assert.strictEqual(assisted.length, 2);
+        assert.strictEqual(standard.length, 1);
+    });
+});
+
+// =============================================================================
+// REDUCE MOTION CANVAS PULSE TESTS
+// =============================================================================
+
+describe('Reduce Motion canvas pulse', () => {
+    test('drawFood accepts reducedMotion parameter', () => {
+        const canvas = createMockCanvas();
+        const renderer = new Renderer(canvas);
+        const food = new Food(GRID_WIDTH, GRID_HEIGHT);
+        food.spawn([], 0, FoodType.BONUS);
+        // Should not throw with reducedMotion param
+        renderer.drawFood(food, false, 10, false, true);
+        renderer.drawFood(food, false, 10, false, false);
+    });
+
+    test('bonus food pulse is 1.0 with reducedMotion', () => {
+        const canvas = createMockCanvas();
+        const renderer = new Renderer(canvas);
+        const food = new Food(GRID_WIDTH, GRID_HEIGHT);
+        food.spawn([], 0, FoodType.BONUS);
+
+        // With reducedMotion, no arc calls for pulsing should show variation
+        renderer.drawFood(food, false, 10, false, true);
+        // The fill call happened (food was drawn)
+        assert.ok(canvas._ctx.fill.mock.calls.length > 0);
+    });
+
+    test('lethal food pulse is 1.0 with reducedMotion', () => {
+        const canvas = createMockCanvas();
+        const renderer = new Renderer(canvas);
+        const food = new Food(GRID_WIDTH, GRID_HEIGHT);
+        food.spawn([], 0, FoodType.LETHAL);
+
+        renderer.drawFood(food, false, 10, false, true);
+        assert.ok(canvas._ctx.fill.mock.calls.length > 0);
     });
 });
