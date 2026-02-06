@@ -341,6 +341,7 @@ class AudioManager {
             const now = this.audioContext.currentTime;
             gain.gain.setValueAtTime(0, now);
             gain.gain.linearRampToValueAtTime(0.3, now + attack);
+            gain.gain.setValueAtTime(0.3, now + duration - decay);
             gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
 
             osc.start(now);
