@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Browser-based snake game with modern features: multiple themes, difficulty levels, mobile touch support, and local leaderboards. See PRD.md for complete requirements.
+Browser-based snake game with modern features: multiple themes, difficulty levels, procedural audio, mobile touch support, and local leaderboards. See PRD.md for complete requirements.
 
 ## Key Technical Decisions
 
@@ -19,6 +19,7 @@ Browser-based snake game with modern features: multiple themes, difficulty level
 - **State persistence**: localStorage for settings and leaderboard
 - **Input**: Keyboard (arrows + WASD), touch/swipe for mobile
 - **Animation**: Player-toggleable smooth interpolation vs classic grid-snap
+- **Audio**: Web Audio API procedural generation (no audio files), lazy AudioContext init
 
 ## Architecture Notes
 
