@@ -4,7 +4,8 @@ const assert = require('node:assert');
 // Mock document for Node.js environment
 global.document = {
     addEventListener: mock.fn(),
-    removeEventListener: mock.fn()
+    removeEventListener: mock.fn(),
+    getElementById: mock.fn(() => null)
 };
 
 // Mock localStorage for Node.js environment
