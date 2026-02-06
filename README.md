@@ -18,7 +18,9 @@ The project is in active development with core gameplay complete:
 - [x] 5 color themes with CSS variables
 - [x] HTML HUD above canvas (score, length, difficulty, toxic penalty)
 - [x] Difficulty-scoped leaderboard with grouped sections
-- [x] Settings screen with difficulty selector, animation toggle, theme picker
+- [x] Procedural audio system (Web Audio API, no audio files)
+- [x] Volume control and mute toggle with localStorage persistence
+- [x] Settings screen with difficulty selector, animation toggle, audio controls, theme picker
 - [x] Toggleable smooth/classic animation
 - [x] Mobile touch support
 - [x] 256 unit tests passing
@@ -83,8 +85,8 @@ The project uses [OpenSpec](https://openspec.dev) for specification-driven devel
 | 7 | accessibility | Pending | ADA/WCAG 2.1 AA compliance |
 | 8 | theme-system | ✅ Complete | 5 color themes with CSS variables |
 | 9 | leaderboard | ✅ Complete | Top 50 scores with initials, difficulty-scoped |
-| 10 | difficulty-system | In Progress | Easy/Medium/Hard, food types, proximity spawning |
-| 11 | audio-system | Pending | Sound effects, volume control |
+| 10 | difficulty-system | ✅ Complete | Easy/Medium/Hard, food types, proximity spawning |
+| 11 | audio-system | ✅ Complete | Procedural sound effects, volume control |
 
 ## Features
 
@@ -95,7 +97,8 @@ The project uses [OpenSpec](https://openspec.dev) for specification-driven devel
 - **Proximity Spawning**: Hazard food spawns near good food — closer on harder difficulties
 - **Leaderboard**: Top 50 scores with initials, grouped by difficulty
 - **HUD**: HTML display above canvas showing score, length, difficulty, toxic penalty info
-- **Settings**: Difficulty, animation style, theme — all persisted locally
+- **Audio**: Procedural sound effects via Web Audio API — no audio files needed
+- **Settings**: Difficulty, animation style, volume/mute, theme — all persisted locally
 
 See [PRD.md](PRD.md) for complete requirements.
 
@@ -135,6 +138,7 @@ dev.setScore(0); dev.status(); dev.setScore(300); dev.status();
 ## Built With
 
 - **HTML5 Canvas** — Game rendering
+- **Web Audio API** — Procedural sound generation
 - **Vanilla JavaScript** — No frameworks, single-file architecture
 - **CSS Custom Properties** — Theming system
 - **Node.js Test Runner** — Unit testing
