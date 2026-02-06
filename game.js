@@ -318,38 +318,42 @@ class AudioManager {
         }
     }
 
+    // Ensure AudioContext is running before scheduling sounds
+    _ensureRunning() {
+        if (this.audioContext.state === 'suspended') {
+            return this.audioContext.resume();
+        }
+        return Promise.resolve();
+    }
+
     // Base method for procedural tone generation
     _playTone(frequency, duration, type = 'sine', attack = 0.01, decay = 0.1) {
         if (!this.initialized || !this.audioContext) return;
-        if (this.audioContext.state === 'suspended') {
-            this.audioContext.resume();
-        }
+        this._ensureRunning().then(() => {
+            const osc = this.audioContext.createOscillator();
+            const gain = this.audioContext.createGain();
 
-        const osc = this.audioContext.createOscillator();
-        const gain = this.audioContext.createGain();
+            osc.type = type;
+            osc.frequency.value = frequency;
+            osc.connect(gain);
+            gain.connect(this.masterGain);
 
-        osc.type = type;
-        osc.frequency.value = frequency;
-        osc.connect(gain);
-        gain.connect(this.masterGain);
+            const now = this.audioContext.currentTime;
+            gain.gain.setValueAtTime(0, now);
+            gain.gain.linearRampToValueAtTime(0.3, now + attack);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
 
-        const now = this.audioContext.currentTime;
-        gain.gain.setValueAtTime(0, now);
-        gain.gain.linearRampToValueAtTime(0.3, now + attack);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
-
-        osc.start(now);
-        osc.stop(now + duration);
+            osc.start(now);
+            osc.stop(now + duration);
+        });
     }
 
     _playSequence(notes, noteLength = 0.1, gap = 0.05) {
         if (!this.initialized || !this.audioContext) return;
-        if (this.audioContext.state === 'suspended') {
-            this.audioContext.resume();
-        }
-
-        notes.forEach((freq, i) => {
-            setTimeout(() => this._playTone(freq, noteLength, 'sine', 0.005, 0.05), i * (noteLength + gap) * 1000);
+        this._ensureRunning().then(() => {
+            notes.forEach((freq, i) => {
+                setTimeout(() => this._playTone(freq, noteLength, 'sine', 0.005, 0.05), i * (noteLength + gap) * 1000);
+            });
         });
     }
 
