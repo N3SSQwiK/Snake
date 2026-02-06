@@ -44,9 +44,9 @@
 - [x] 6.3 Play back sound on back, escape, skip, quit
 
 ## 7. Testing
-- [ ] 7.1 Manual test: each gameplay sound plays at correct moment
-- [ ] 7.2 Manual test: each UI sound plays at correct moment
-- [ ] 7.3 Manual test: volume slider affects all sounds
-- [ ] 7.4 Manual test: mute silences all sounds
-- [ ] 7.5 Manual test: settings persist after reload
-- [ ] 7.6 Manual test: AudioContext initializes on first user interaction
+- [x] 7.1 Manual test: each gameplay sound plays at correct moment
+- [x] 7.2 Manual test: each UI sound plays at correct moment
+- [x] 7.3 Manual test: volume slider affects all sounds
+- [x] 7.4 Manual test: mute silences all sounds
+- [x] 7.5 Manual test: settings persist after reload
+- [x] 7.6 Manual test: AudioContext initializes on first user interaction
