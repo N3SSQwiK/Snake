@@ -43,6 +43,10 @@ const FoodType = {
 // Special food timer (ticks before despawn)
 const SPECIAL_FOOD_TICKS = 60; // 6s at 10Hz
 
+// Extended Time Mode: doubled timers for accessibility
+const FOOD_DECAY_TICKS_ACCESSIBLE = 200;    // 20s at 10Hz (2x normal)
+const SPECIAL_FOOD_TICKS_ACCESSIBLE = 120;  // 12s at 10Hz (2x normal)
+
 // Difficulty levels
 const DIFFICULTY_LEVELS = {
     easy: {
@@ -265,6 +269,41 @@ const THEMES = {
             goldGlow: 'rgba(251, 191, 36, 0.4)'
         },
         unlockCondition: { type: 'scoreWithDifficulty', threshold: 300, minDifficulty: 'hard' }
+    },
+    highContrast: {
+        name: 'High Contrast',
+        colors: {
+            background: '#000000',
+            grid: '#333333',
+            snake: '#00ff00',
+            snakeHead: '#ffffff',
+            snakeTail: '#00cc00',
+            snakeGlow: 'rgba(0, 255, 0, 0.5)',
+            snakeEyes: '#000000',
+            food: '#ff0000',
+            bonusFood: '#ffff00',
+            poisonFood: '#ff00ff',
+            foodStem: '#ffffff',
+            foodLeaf: '#00ff00',
+            scoreText: '#ffffff',
+            scoreShadow: 'rgba(0, 0, 0, 1)'
+        },
+        ui: {
+            accent: '#00ff00',
+            accentGlow: 'rgba(0, 255, 0, 0.4)',
+            accentHover: '#00cc00',
+            danger: '#ff0000',
+            dangerGlow: 'rgba(255, 0, 0, 0.4)',
+            glass: 'rgba(255, 255, 255, 0.1)',
+            glassBorder: 'rgba(255, 255, 255, 0.3)',
+            glassHighlight: 'rgba(255, 255, 255, 0.2)',
+            textPrimary: '#ffffff',
+            textSecondary: '#cccccc',
+            textMuted: '#999999',
+            gold: '#ffff00',
+            goldGlow: 'rgba(255, 255, 0, 0.5)'
+        },
+        unlockCondition: { type: 'default' }
     }
 };
 
@@ -439,19 +478,22 @@ class StorageManager {
         }
     }
 
-    getLeaderboard(difficulty) {
+    getLeaderboard(difficulty, assisted = false) {
         const board = this.get('leaderboard', []);
-        if (!difficulty) return board;
-        return board.filter(e => e.difficulty === difficulty || !e.difficulty);
+        // Filter by assisted flag (legacy entries without field are non-assisted)
+        const filtered = board.filter(e => !!(e.assisted) === assisted);
+        if (!difficulty) return filtered;
+        return filtered.filter(e => e.difficulty === difficulty || !e.difficulty);
     }
 
-    addScore(initials, score, difficulty) {
+    addScore(initials, score, difficulty, assisted = false) {
         const sanitized = String(initials).toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) || 'AAA';
         const validScore = typeof score === 'number' && score >= 0 ? Math.floor(score) : 0;
         const entry = {
             initials: sanitized,
             score: validScore,
             difficulty: difficulty || undefined,
+            assisted: assisted || undefined,
             timestamp: Date.now()
         };
         // Store all entries together, cap at 10 per difficulty
@@ -465,13 +507,13 @@ class StorageManager {
         this.set('leaderboard', allEntries.slice(0, 50));
     }
 
-    isHighScore(score, difficulty) {
-        const board = this.getLeaderboard(difficulty).slice(0, 10);
+    isHighScore(score, difficulty, assisted = false) {
+        const board = this.getLeaderboard(difficulty, assisted).slice(0, 10);
         return board.length < 10 || score > board[board.length - 1].score;
     }
 
-    isNewTopScore(score, difficulty) {
-        const board = this.getLeaderboard(difficulty);
+    isNewTopScore(score, difficulty, assisted = false) {
+        const board = this.getLeaderboard(difficulty, assisted);
         return board.length === 0 || score > board[0].score;
     }
 
@@ -963,33 +1005,35 @@ class Renderer {
         this.ctx.fill();
     }
 
-    drawFood(food, isDecayWarning, currentTick) {
+    drawFood(food, isDecayWarning, currentTick, colorblindMode = false, reducedMotion = false) {
         if (!food.position) {
             return;
         }
 
         // Blink effect: toggle visibility every 5 ticks when decay warning
+        // At 10Hz tick rate, this = 1 flash/second (0.5s on, 0.5s off)
+        // WCAG 2.3.1 requires < 3 flashes/second - we are compliant
         if (isDecayWarning && Math.floor(currentTick / 5) % 2 === 1) {
             return;
         }
 
         switch (food.foodType) {
             case FoodType.BONUS:
-                this._drawBonusFood(food, currentTick);
+                this._drawBonusFood(food, currentTick, colorblindMode, reducedMotion);
                 break;
             case FoodType.TOXIC:
-                this._drawToxicFood(food, currentTick);
+                this._drawToxicFood(food, currentTick, colorblindMode);
                 break;
             case FoodType.LETHAL:
-                this._drawLethalFood(food, currentTick);
+                this._drawLethalFood(food, currentTick, colorblindMode, reducedMotion);
                 break;
             default:
-                this._drawRegularFood(food);
+                this._drawRegularFood(food, colorblindMode);
                 break;
         }
     }
 
-    _drawRegularFood(food) {
+    _drawRegularFood(food, colorblindMode = false) {
         const x = food.position.x * CELL_SIZE;
         const y = food.position.y * CELL_SIZE;
         const size = CELL_SIZE;
@@ -1014,6 +1058,13 @@ class Renderer {
         this.ctx.closePath();
         this.ctx.fill();
 
+        // Colorblind mode: add white outline
+        if (colorblindMode) {
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.lineWidth = 2;
+            this.ctx.stroke();
+        }
+
         this.ctx.shadowBlur = 0;
 
         // Draw stem
@@ -1032,15 +1083,15 @@ class Renderer {
         this.ctx.fill();
     }
 
-    _drawBonusFood(food, currentTick) {
+    _drawBonusFood(food, currentTick, colorblindMode = false, reducedMotion = false) {
         const x = food.position.x * CELL_SIZE;
         const y = food.position.y * CELL_SIZE;
         const size = CELL_SIZE;
         const cx = x + size / 2;
         const cy = y + size / 2;
 
-        // Subtle rotation pulse
-        const pulse = 1 + 0.08 * Math.sin(currentTick * 0.3);
+        // Subtle rotation pulse (disabled in reduced motion)
+        const pulse = reducedMotion ? 1.0 : 1 + 0.08 * Math.sin(currentTick * 0.3);
 
         this.ctx.shadowColor = this.theme.colors.bonusFood;
         this.ctx.shadowBlur = 10;
@@ -1060,10 +1111,18 @@ class Renderer {
         }
         this.ctx.closePath();
         this.ctx.fill();
+
+        // Colorblind mode: add white outline
+        if (colorblindMode) {
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.lineWidth = 2;
+            this.ctx.stroke();
+        }
+
         this.ctx.shadowBlur = 0;
     }
 
-    _drawToxicFood(food, currentTick) {
+    _drawToxicFood(food, currentTick, colorblindMode = false) {
         const x = food.position.x * CELL_SIZE;
         const y = food.position.y * CELL_SIZE;
         const size = CELL_SIZE;
@@ -1084,6 +1143,13 @@ class Renderer {
         this.ctx.closePath();
         this.ctx.fill();
 
+        // Colorblind mode: add white outline
+        if (colorblindMode) {
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.lineWidth = 2;
+            this.ctx.stroke();
+        }
+
         this.ctx.shadowBlur = 0;
 
         // Exclamation mark
@@ -1094,15 +1160,15 @@ class Renderer {
         this.ctx.fill();
     }
 
-    _drawLethalFood(food, currentTick) {
+    _drawLethalFood(food, currentTick, colorblindMode = false, reducedMotion = false) {
         const x = food.position.x * CELL_SIZE;
         const y = food.position.y * CELL_SIZE;
         const size = CELL_SIZE;
         const cx = x + size / 2;
         const cy = y + size / 2;
 
-        // Pulsing danger
-        const pulse = 0.85 + 0.15 * Math.sin(currentTick * 0.5);
+        // Pulsing danger (disabled in reduced motion)
+        const pulse = reducedMotion ? 1.0 : 0.85 + 0.15 * Math.sin(currentTick * 0.5);
 
         this.ctx.shadowColor = this.theme.colors.poisonFood;
         this.ctx.shadowBlur = 12;
@@ -1122,6 +1188,13 @@ class Renderer {
         }
         this.ctx.closePath();
         this.ctx.fill();
+
+        // Colorblind mode: add white outline
+        if (colorblindMode) {
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.lineWidth = 2;
+            this.ctx.stroke();
+        }
 
         this.ctx.shadowBlur = 0;
 
@@ -1349,6 +1422,9 @@ class UIManager {
         this.volumeSlider = document.getElementById('volume-slider');
         this.volumeValue = document.getElementById('volume-value');
         this.muteToggle = document.getElementById('mute-toggle');
+        this.reduceMotionToggle = document.getElementById('reduce-motion-toggle');
+        this.colorblindModeToggle = document.getElementById('colorblind-mode-toggle');
+        this.accessibilityModeToggle = document.getElementById('accessibility-mode-toggle');
 
         // Initials entry state
         this._initialsChars = [0, 0, 0]; // A=0, B=1, ... Z=25
@@ -1360,6 +1436,22 @@ class UIManager {
         // Sync toggles with stored values on init
         this.animationToggle.setAttribute('aria-checked',
             String(this.game.animationStyle === 'smooth'));
+        if (this.game.reducedMotion) {
+            this.animationToggle.setAttribute('disabled', '');
+            this.animationToggle.setAttribute('aria-disabled', 'true');
+        }
+        if (this.reduceMotionToggle) {
+            this.reduceMotionToggle.setAttribute('aria-checked',
+                String(this.game.reducedMotion || false));
+        }
+        if (this.colorblindModeToggle) {
+            this.colorblindModeToggle.setAttribute('aria-checked',
+                String(this.game.colorblindMode || false));
+        }
+        if (this.accessibilityModeToggle) {
+            this.accessibilityModeToggle.setAttribute('aria-checked',
+                String(this.game.accessibilityMode || false));
+        }
         this.syncDifficultySelector();
         this.syncAudioControls();
 
@@ -1378,6 +1470,11 @@ class UIManager {
 
         // Attach hover/focus sounds to buttons
         this._attachButtonSounds();
+
+        // Focus management state
+        this._previouslyFocusedElement = null;
+        this._focusTrapHandler = null;
+        this._currentFocusTrapContainer = null;
     }
 
     _attachButtonSounds() {
@@ -1405,6 +1502,78 @@ class UIManager {
         }
     }
 
+    // Focus trap: returns all focusable elements within a container
+    _getFocusableElements(container) {
+        const selector = 'button:not([disabled]):not([hidden]), [href], input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+        return Array.from(container.querySelectorAll(selector))
+            .filter(el => el.offsetParent !== null); // visible only
+    }
+
+    // Sets up focus trapping for a modal container
+    _trapFocus(containerSelector) {
+        // Store previously focused element
+        this._previouslyFocusedElement = document.activeElement;
+
+        // Find the container
+        const container = this.container.querySelector(containerSelector);
+        if (!container) return;
+
+        this._currentFocusTrapContainer = container;
+
+        // Focus the first focusable element (or close button)
+        requestAnimationFrame(() => {
+            const focusable = this._getFocusableElements(container);
+            if (focusable.length > 0) {
+                // Prefer close button if present, otherwise first element
+                const closeBtn = container.querySelector('.ui-panel__close');
+                const firstFocusable = closeBtn || focusable[0];
+                firstFocusable.focus();
+            }
+        });
+
+        // Set up Tab key trap
+        this._focusTrapHandler = (e) => {
+            if (e.key !== 'Tab') return;
+
+            const focusable = this._getFocusableElements(container);
+            if (focusable.length === 0) return;
+
+            const firstFocusable = focusable[0];
+            const lastFocusable = focusable[focusable.length - 1];
+
+            if (e.shiftKey) {
+                // Shift+Tab: if on first element, go to last
+                if (document.activeElement === firstFocusable) {
+                    e.preventDefault();
+                    lastFocusable.focus();
+                }
+            } else {
+                // Tab: if on last element, go to first
+                if (document.activeElement === lastFocusable) {
+                    e.preventDefault();
+                    firstFocusable.focus();
+                }
+            }
+        };
+
+        document.addEventListener('keydown', this._focusTrapHandler);
+    }
+
+    // Releases focus trap and restores focus to previous element
+    _releaseFocus() {
+        if (this._focusTrapHandler) {
+            document.removeEventListener('keydown', this._focusTrapHandler);
+            this._focusTrapHandler = null;
+        }
+        this._currentFocusTrapContainer = null;
+
+        // Restore focus to previously focused element
+        if (this._previouslyFocusedElement && this._previouslyFocusedElement.focus) {
+            this._previouslyFocusedElement.focus();
+        }
+        this._previouslyFocusedElement = null;
+    }
+
     updateState(newState) {
         this.container.setAttribute('data-state', newState);
         // Settings modal has its own lifecycle (showSettings/hideSettings)
@@ -1415,6 +1584,25 @@ class UIManager {
         // Sync toggles with current values
         this.animationToggle.setAttribute('aria-checked',
             String(this.game.animationStyle === 'smooth'));
+        if (this.game.reducedMotion) {
+            this.animationToggle.setAttribute('disabled', '');
+            this.animationToggle.setAttribute('aria-disabled', 'true');
+        } else {
+            this.animationToggle.removeAttribute('disabled');
+            this.animationToggle.removeAttribute('aria-disabled');
+        }
+        if (this.reduceMotionToggle) {
+            this.reduceMotionToggle.setAttribute('aria-checked',
+                String(this.game.reducedMotion || false));
+        }
+        if (this.colorblindModeToggle) {
+            this.colorblindModeToggle.setAttribute('aria-checked',
+                String(this.game.colorblindMode || false));
+        }
+        if (this.accessibilityModeToggle) {
+            this.accessibilityModeToggle.setAttribute('aria-checked',
+                String(this.game.accessibilityMode || false));
+        }
         this.syncDifficultySelector();
         this.syncAudioControls();
 
@@ -1430,6 +1618,9 @@ class UIManager {
                 if (panel) panel.scrollTop = 0;
             }
         });
+
+        // Set up focus trap for settings modal
+        this._trapFocus('.screen-settings');
     }
 
     renderThemePicker() {
@@ -1520,7 +1711,24 @@ class UIManager {
     }
 
     hideSettings() {
+        this._releaseFocus();
         this.container.removeAttribute('data-ui');
+    }
+
+    showShortcuts() {
+        this._shortcutsPrevUi = this.container.getAttribute('data-ui');
+        this.container.setAttribute('data-ui', 'shortcuts');
+        this._trapFocus('.screen-shortcuts');
+    }
+
+    hideShortcuts() {
+        this._releaseFocus();
+        if (this._shortcutsPrevUi) {
+            this.container.setAttribute('data-ui', this._shortcutsPrevUi);
+        } else {
+            this.container.removeAttribute('data-ui');
+        }
+        this._shortcutsPrevUi = null;
     }
 
     updateScore(score) {
@@ -1552,6 +1760,9 @@ class UIManager {
     }
 
     showInitials(score, storage) {
+        // Store previously focused element for restoration
+        this._initialsPrevFocus = document.activeElement;
+
         this._initialsScore = score;
         this._initialsStorage = storage;
         this._initialsChars = [0, 0, 0];
@@ -1561,6 +1772,12 @@ class UIManager {
         this._renderInitialsSlots();
 
         this.container.setAttribute('data-ui', 'initials');
+
+        // Focus first slot for accessibility
+        requestAnimationFrame(() => {
+            const firstSlot = this.initialsSlots[0];
+            if (firstSlot) firstSlot.focus();
+        });
 
         this._initialsKeyHandler = (e) => this._handleInitialsKey(e);
         document.addEventListener('keydown', this._initialsKeyHandler);
@@ -1627,6 +1844,12 @@ class UIManager {
             });
             this._initialsSlotTapHandler = null;
         }
+
+        // Restore focus to previously focused element
+        if (this._initialsPrevFocus && this._initialsPrevFocus.focus) {
+            this._initialsPrevFocus.focus();
+        }
+        this._initialsPrevFocus = null;
     }
 
     _renderInitialsSlots() {
@@ -1678,8 +1901,9 @@ class UIManager {
     _submitInitials() {
         const initials = this._initialsChars.map(c => String.fromCharCode(65 + c)).join('');
         const difficulty = this.game.difficulty;
-        const wasTopScore = this._initialsStorage.isNewTopScore(this._initialsScore, difficulty);
-        this._initialsStorage.addScore(initials, this._initialsScore, difficulty);
+        const assisted = this.game.accessibilityMode || false;
+        const wasTopScore = this._initialsStorage.isNewTopScore(this._initialsScore, difficulty, assisted);
+        this._initialsStorage.addScore(initials, this._initialsScore, difficulty, assisted);
         this.hideInitials();
         // Refresh game-over screen with updated best score
         this.updateScore(this._initialsScore);
@@ -1727,13 +1951,15 @@ class UIManager {
 
         // Update heading
         const heading = this.leaderboardBody.closest('.ui-panel')?.querySelector('.ui-heading');
+        const assisted = this.game.accessibilityMode || false;
 
         if (midGame) {
             // Filtered view: single list for current difficulty
             const diffName = (DIFFICULTY_LEVELS[this.game.difficulty] || {}).name || this.game.difficulty;
-            if (heading) heading.textContent = `High Scores \u2014 ${diffName}`;
+            const suffix = assisted ? ' (Extended Time)' : '';
+            if (heading) heading.textContent = `High Scores \u2014 ${diffName}${suffix}`;
 
-            const board = this.game.storage.getLeaderboard(this.game.difficulty).slice(0, 10);
+            const board = this.game.storage.getLeaderboard(this.game.difficulty, assisted).slice(0, 10);
             if (board.length === 0) {
                 const empty = document.createElement('p');
                 empty.className = 'leaderboard-empty';
@@ -1746,7 +1972,7 @@ class UIManager {
             // Grouped view: sections for Hard, Medium, Easy, then Unranked
             if (heading) heading.textContent = 'High Scores';
 
-            const allEntries = this.game.storage.getLeaderboard();
+            const standardEntries = this.game.storage.getLeaderboard(null, false);
             const groups = [
                 { key: 'hard', name: 'Hard' },
                 { key: 'medium', name: 'Medium' },
@@ -1755,7 +1981,7 @@ class UIManager {
 
             let hasAny = false;
             for (const group of groups) {
-                const entries = allEntries
+                const entries = standardEntries
                     .filter(e => e.difficulty === group.key)
                     .slice(0, 10);
                 if (entries.length === 0) continue;
@@ -1770,7 +1996,7 @@ class UIManager {
             }
 
             // Legacy entries (no difficulty)
-            const legacy = allEntries.filter(e => !e.difficulty).slice(0, 10);
+            const legacy = standardEntries.filter(e => !e.difficulty).slice(0, 10);
             if (legacy.length > 0) {
                 hasAny = true;
                 const sectionHeader = document.createElement('div');
@@ -1779,6 +2005,23 @@ class UIManager {
                 this.leaderboardBody.appendChild(sectionHeader);
 
                 this._renderLeaderboardRows(legacy, this.leaderboardBody);
+            }
+
+            // Extended Time Mode sections (separate from standard)
+            const assistedEntries = this.game.storage.getLeaderboard(null, true);
+            for (const group of groups) {
+                const entries = assistedEntries
+                    .filter(e => e.difficulty === group.key)
+                    .slice(0, 10);
+                if (entries.length === 0) continue;
+                hasAny = true;
+
+                const sectionHeader = document.createElement('div');
+                sectionHeader.className = 'leaderboard-section-header';
+                sectionHeader.textContent = `${group.name} (Extended Time)`;
+                this.leaderboardBody.appendChild(sectionHeader);
+
+                this._renderLeaderboardRows(entries, this.leaderboardBody);
             }
 
             if (!hasAny) {
@@ -1791,9 +2034,13 @@ class UIManager {
 
         this._leaderboardPrevUi = this.container.getAttribute('data-ui');
         this.container.setAttribute('data-ui', 'leaderboard');
+
+        // Set up focus trap for leaderboard modal
+        this._trapFocus('.screen-leaderboard');
     }
 
     hideLeaderboard() {
+        this._releaseFocus();
         if (this._leaderboardPrevUi) {
             this.container.setAttribute('data-ui', this._leaderboardPrevUi);
         } else {
@@ -1854,6 +2101,7 @@ class UIManager {
                 this.game.setState(GameState.MENU);
                 break;
             case 'toggle-animation-style': {
+                if (this.game.reducedMotion) break;
                 const newStyle = this.game.animationStyle === 'smooth' ? 'classic' : 'smooth';
                 this.game.setAnimationStyle(newStyle);
                 this.animationToggle.setAttribute('aria-checked', String(newStyle === 'smooth'));
@@ -1867,9 +2115,38 @@ class UIManager {
                 if (!newMuted) this.game.audio.playConfirm();
                 break;
             }
+            case 'toggle-reduce-motion': {
+                const newReducedMotion = !this.game.reducedMotion;
+                this.game.setReducedMotion(newReducedMotion);
+                this.reduceMotionToggle.setAttribute('aria-checked', String(newReducedMotion));
+                if (newReducedMotion) {
+                    this.animationToggle.setAttribute('aria-checked', 'false');
+                    this.animationToggle.setAttribute('disabled', '');
+                    this.animationToggle.setAttribute('aria-disabled', 'true');
+                } else {
+                    this.animationToggle.removeAttribute('disabled');
+                    this.animationToggle.removeAttribute('aria-disabled');
+                }
+                break;
+            }
+            case 'toggle-colorblind-mode': {
+                const newColorblindMode = !this.game.colorblindMode;
+                this.game.setColorblindMode(newColorblindMode);
+                this.colorblindModeToggle.setAttribute('aria-checked', String(newColorblindMode));
+                break;
+            }
+            case 'toggle-accessibility-mode': {
+                const newAccessibilityMode = !this.game.accessibilityMode;
+                this.game.setAccessibilityMode(newAccessibilityMode);
+                this.accessibilityModeToggle.setAttribute('aria-checked', String(newAccessibilityMode));
+                break;
+            }
             case 'settings-back':
                 this.game.audio.playBack();
                 this.hideSettings();
+                break;
+            case 'shortcuts-back':
+                this.hideShortcuts();
                 break;
             case 'submit-initials':
                 this.game.audio.playConfirm();
@@ -1933,8 +2210,14 @@ class Game {
         // Wall collision derived from difficulty
         this.wallCollisionEnabled = this.getDifficultyConfig().wallCollision;
 
-        // Animation style setting
-        this.animationStyle = this.storage.get('animationStyle', 'smooth');
+        // Animation style setting - respect prefers-reduced-motion
+        const prefersReducedMotion = typeof window !== 'undefined' &&
+            window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const savedAnimationStyle = this.storage.get('animationStyle', 'smooth');
+        this.animationStyle = prefersReducedMotion ? 'classic' : savedAnimationStyle;
+        this.reducedMotion = this.storage.get('reducedMotion', prefersReducedMotion);
+        this.colorblindMode = this.storage.get('colorblindMode', false);
+        this.accessibilityMode = this.storage.get('accessibilityMode', false);
 
         // Load saved theme
         this.currentTheme = this.storage.get('theme', 'classic');
@@ -1947,6 +2230,10 @@ class Game {
 
         // Initialize input handler
         this.inputHandler = new InputHandler(canvas, () => this.snake.direction);
+
+        // Accessibility: screen reader announcer elements
+        this._srAnnouncer = null;
+        this._srScore = null;
 
         // Bind methods
         this.loop = this.loop.bind(this);
@@ -1971,6 +2258,15 @@ class Game {
                 this.ui.updateScore(this.score);
             }
         }
+
+        // Screen reader announcements for state changes
+        if (newState === GameState.PLAYING && oldState === GameState.MENU) {
+            this.announce('Game started. Use arrow keys or WASD to move.');
+        } else if (newState === GameState.PLAYING && oldState === GameState.PAUSED) {
+            this.announce('Game resumed.');
+        } else if (newState === GameState.PAUSED) {
+            this.announce('Game paused.');
+        }
     }
 
     handleGameOver() {
@@ -1986,16 +2282,27 @@ class Game {
         }
 
         // Play high score or game over sound
-        const isNewTopScore = this.storage.isNewTopScore(this.score, this.difficulty);
+        const assisted = this.accessibilityMode || false;
+        const isNewTopScore = this.storage.isNewTopScore(this.score, this.difficulty, assisted);
         if (isNewTopScore && this.score > 0) {
             this.audio.playHighScore();
         } else {
             this.audio.playGameOver();
         }
 
+        // Screen reader announcement
+        const isNewHighScore = this.storage.isHighScore(this.score, this.difficulty, assisted);
+        if (isNewTopScore && this.score > 0) {
+            this.announce(`Game over! New high score: ${this.score} points!`, 'assertive');
+        } else if (isNewHighScore && this.score > 0) {
+            this.announce(`Game over! You made the leaderboard with ${this.score} points!`, 'assertive');
+        } else {
+            this.announce(`Game over! Final score: ${this.score} points`, 'assertive');
+        }
+
         this.setState(GameState.GAMEOVER);
 
-        if (this.ui && this.score > 0 && this.storage.isHighScore(this.score, this.difficulty)) {
+        if (this.ui && this.score > 0 && this.storage.isHighScore(this.score, this.difficulty, assisted)) {
             this.ui.showInitials(this.score, this.storage);
         }
     }
@@ -2028,6 +2335,47 @@ class Game {
     setMuted(muted) {
         this.audio.setMuted(muted);
         this.storage.set('audioMuted', muted);
+    }
+
+    setReducedMotion(enabled) {
+        this.reducedMotion = enabled;
+        this.storage.set('reducedMotion', enabled);
+        if (enabled) {
+            this.animationStyle = 'classic';
+            this.storage.set('animationStyle', 'classic');
+        }
+    }
+
+    setColorblindMode(enabled) {
+        this.colorblindMode = enabled;
+        this.storage.set('colorblindMode', enabled);
+    }
+
+    setAccessibilityMode(enabled) {
+        this.accessibilityMode = enabled;
+        this.storage.set('accessibilityMode', enabled);
+        // Recalculate tick rate if needed (slower in accessibility mode)
+        this.updateTickRate();
+    }
+
+    // Screen reader announcements
+    announce(message, priority = 'polite') {
+        if (!this._srAnnouncer) {
+            this._srAnnouncer = document.getElementById('sr-announcer');
+        }
+        if (this._srAnnouncer) {
+            this._srAnnouncer.setAttribute('aria-live', priority);
+            this._srAnnouncer.textContent = message;
+        }
+    }
+
+    announceScore(score) {
+        if (!this._srScore) {
+            this._srScore = document.getElementById('sr-score');
+        }
+        if (this._srScore) {
+            this._srScore.textContent = `Score: ${score}`;
+        }
     }
 
     applyTheme(themeName) {
@@ -2106,8 +2454,22 @@ class Game {
     updateTickRate() {
         const config = this.getDifficultyConfig();
         const speedUps = Math.floor(this.score / config.speedScoreStep);
-        const newRate = Math.min(config.baseTickRate + speedUps, config.maxTickRate);
+        let newRate = Math.min(config.baseTickRate + speedUps, config.maxTickRate);
+
+        // Extended Time Mode: cap speed at Easy base rate (8 ticks/s)
+        if (this.accessibilityMode) {
+            newRate = Math.min(newRate, DIFFICULTY_LEVELS.easy.baseTickRate);
+        }
+
         this.tickInterval = 1000 / newRate;
+    }
+
+    _getRegularDecay() {
+        return this.accessibilityMode ? FOOD_DECAY_TICKS_ACCESSIBLE : FOOD_DECAY_TICKS;
+    }
+
+    _getSpecialDecay() {
+        return this.accessibilityMode ? SPECIAL_FOOD_TICKS_ACCESSIBLE : SPECIAL_FOOD_TICKS;
     }
 
     calculateToxicPenalty() {
@@ -2191,7 +2553,7 @@ class Game {
 
         // Spawn initial food if none exists
         if (!this.food.position) {
-            this.food.spawn(this.snake.body, this.tickCount);
+            this.food.spawn(this.snake.body, this.tickCount, FoodType.REGULAR, this._getRegularDecay());
         }
 
         // Check regular food collision
@@ -2200,12 +2562,13 @@ class Game {
             this.snake.grow();
             this.updateTickRate();
             this.audio.playEat();
-            this.food.spawn(this.snake.body, this.tickCount);
+            this.announceScore(this.score);
+            this.food.spawn(this.snake.body, this.tickCount, FoodType.REGULAR, this._getRegularDecay());
         }
 
-        // Check food decay
+        // Check food decay (Extended Time Mode uses doubled timers)
         if (this.food.isExpired(this.tickCount)) {
-            this.food.spawn(this.snake.body, this.tickCount);
+            this.food.spawn(this.snake.body, this.tickCount, FoodType.REGULAR, this._getRegularDecay());
         }
 
         // Special food logic
@@ -2219,6 +2582,7 @@ class Game {
                     this.snake.grow();
                     this.updateTickRate();
                     this.audio.playBonusEat();
+                    this.announceScore(this.score);
                     break;
                 case FoodType.TOXIC: {
                     // Deduct points (never go negative)
@@ -2244,7 +2608,7 @@ class Game {
             this.specialFood.reset();
         }
 
-        // Check special food expiry
+        // Check special food expiry (Extended Time Mode uses doubled timers)
         if (this.specialFood.position && this.specialFood.isExpired(this.tickCount)) {
             // Play relief sound when hazard food expires
             if (this.specialFood.foodType === FoodType.TOXIC || this.specialFood.foodType === FoodType.LETHAL) {
@@ -2261,22 +2625,23 @@ class Game {
             const goodFoodPos = this.food.position;
             const prox = diffConfig.hazardProximity;
 
+            const specialDecay = this._getSpecialDecay();
             if (roll < diffConfig.lethalFoodChance) {
                 // Try proximity spawn first, fall back to random if it fails
-                let spawned = goodFoodPos && prox && this.specialFood.spawnNearTarget(goodFoodPos, prox.min, prox.max, excludePositions, this.tickCount, FoodType.LETHAL, SPECIAL_FOOD_TICKS);
+                let spawned = goodFoodPos && prox && this.specialFood.spawnNearTarget(goodFoodPos, prox.min, prox.max, excludePositions, this.tickCount, FoodType.LETHAL, specialDecay);
                 if (!spawned) {
-                    spawned = this.specialFood.spawn(excludePositions, this.tickCount, FoodType.LETHAL, SPECIAL_FOOD_TICKS);
+                    spawned = this.specialFood.spawn(excludePositions, this.tickCount, FoodType.LETHAL, specialDecay);
                 }
                 if (spawned) this.audio.playPoisonAppear();
             } else if (roll < diffConfig.lethalFoodChance + diffConfig.toxicFoodChance) {
                 // Try proximity spawn first, fall back to random if it fails
-                let spawned = goodFoodPos && prox && this.specialFood.spawnNearTarget(goodFoodPos, prox.min, prox.max, excludePositions, this.tickCount, FoodType.TOXIC, SPECIAL_FOOD_TICKS);
+                let spawned = goodFoodPos && prox && this.specialFood.spawnNearTarget(goodFoodPos, prox.min, prox.max, excludePositions, this.tickCount, FoodType.TOXIC, specialDecay);
                 if (!spawned) {
-                    spawned = this.specialFood.spawn(excludePositions, this.tickCount, FoodType.TOXIC, SPECIAL_FOOD_TICKS);
+                    spawned = this.specialFood.spawn(excludePositions, this.tickCount, FoodType.TOXIC, specialDecay);
                 }
                 if (spawned) this.audio.playPoisonAppear();
             } else if (roll < diffConfig.lethalFoodChance + diffConfig.toxicFoodChance + diffConfig.bonusFoodChance) {
-                this.specialFood.spawn(excludePositions, this.tickCount, FoodType.BONUS, SPECIAL_FOOD_TICKS);
+                this.specialFood.spawn(excludePositions, this.tickCount, FoodType.BONUS, specialDecay);
             }
         }
     }
@@ -2297,12 +2662,12 @@ class Game {
             // Draw food (only when playing or paused)
             if (this.state !== GameState.GAMEOVER) {
                 const isDecayWarning = this.food.isDecayWarning(this.tickCount);
-                this.renderer.drawFood(this.food, isDecayWarning, this.tickCount);
+                this.renderer.drawFood(this.food, isDecayWarning, this.tickCount, this.colorblindMode, this.reducedMotion);
 
                 // Draw special food
                 if (this.specialFood.position) {
                     const specialDecayWarning = this.specialFood.isDecayWarning(this.tickCount);
-                    this.renderer.drawFood(this.specialFood, specialDecayWarning, this.tickCount);
+                    this.renderer.drawFood(this.specialFood, specialDecayWarning, this.tickCount, this.colorblindMode, this.reducedMotion);
                 }
             }
 
@@ -2391,6 +2756,10 @@ if (typeof document !== 'undefined') {
                 game.ui.hideSettings();
                 return;
             }
+            if (activeUi === 'shortcuts') {
+                game.ui.hideShortcuts();
+                return;
+            }
             if (activeUi === 'initials') {
                 return; // Handled by its own keydown listener
             }
@@ -2398,6 +2767,20 @@ if (typeof document !== 'undefined') {
             if (game.state === GameState.PLAYING || game.state === GameState.PAUSED || game.state === GameState.GAMEOVER) {
                 game.reset();
                 game.setState(GameState.MENU);
+            }
+        });
+
+        // Show keyboard shortcuts with ? key
+        document.addEventListener('keydown', (e) => {
+            // Only trigger on ? (Shift + / or ?) key, not when typing in inputs
+            if ((e.key === '?' || (e.key === '/' && e.shiftKey)) &&
+                !['INPUT', 'TEXTAREA'].includes(e.target.tagName)) {
+                const activeUi = container.getAttribute('data-ui');
+                if (activeUi === 'shortcuts') {
+                    game.ui.hideShortcuts();
+                } else if (activeUi !== 'initials') {
+                    game.ui.showShortcuts();
+                }
             }
         });
 
@@ -2504,7 +2887,7 @@ if (typeof module !== 'undefined' && module.exports) {
         Game, Renderer, Snake, Food, InputHandler, StorageManager, UIManager, AudioManager,
         GameState, Direction, FoodType,
         GRID_WIDTH, GRID_HEIGHT, CELL_SIZE,
-        FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_MAX_SPAWN_ATTEMPTS,
-        SPECIAL_FOOD_TICKS, DIFFICULTY_LEVELS
+        FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_DECAY_TICKS_ACCESSIBLE, FOOD_MAX_SPAWN_ATTEMPTS,
+        SPECIAL_FOOD_TICKS, SPECIAL_FOOD_TICKS_ACCESSIBLE, DIFFICULTY_LEVELS
     };
 }
