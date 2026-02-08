@@ -61,7 +61,7 @@ const createMockCanvas = () => {
 
 // Import game module
 const {
-    Game, Renderer, Snake, Food, InputHandler, StorageManager,
+    Game, Renderer, Snake, Food, InputHandler, StorageManager, UIManager,
     GameState, Direction, FoodType,
     GRID_WIDTH, GRID_HEIGHT, CELL_SIZE,
     FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_DECAY_TICKS_ACCESSIBLE, FOOD_MAX_SPAWN_ATTEMPTS,
@@ -2672,5 +2672,327 @@ describe('Reduce Motion canvas pulse', () => {
 
         renderer.drawFood(food, false, 10, false, true);
         assert.ok(canvas._ctx.fill.mock.calls.length > 0);
+    });
+});
+
+// =============================================================================
+// UI MANAGER ARROW-KEY NAVIGATION TESTS
+// =============================================================================
+
+// Helper to create a minimal DOM mock for UIManager tests
+function createMockUIManager(stateOverride) {
+    const keydownHandlers = [];
+    const origAddEventListener = global.document.addEventListener;
+    const origRemoveEventListener = global.document.removeEventListener;
+
+    global.document.addEventListener = mock.fn((event, handler) => {
+        if (event === 'keydown') keydownHandlers.push(handler);
+    });
+    global.document.removeEventListener = mock.fn();
+    const origRAF = global.requestAnimationFrame;
+    global.requestAnimationFrame = mock.fn((cb) => cb());
+
+    // Create button elements with focus tracking
+    const createBtn = (action) => {
+        const btn = {
+            tagName: 'BUTTON',
+            className: 'ui-btn',
+            dataset: { action },
+            disabled: false,
+            offsetParent: {},  // non-null = visible
+            focus: mock.fn(),
+            addEventListener: mock.fn(),
+            removeEventListener: mock.fn(),
+            getAttribute: mock.fn(() => null),
+            setAttribute: mock.fn(),
+            removeAttribute: mock.fn(),
+            closest: mock.fn(() => null),
+            querySelector: mock.fn(() => null),
+            querySelectorAll: mock.fn(() => [])
+        };
+        return btn;
+    };
+
+    const playBtn = createBtn('play');
+    const settingsBtn = createBtn('settings');
+    const highscoresBtn = createBtn('highscores');
+    const btnGroup = {
+        querySelectorAll: mock.fn(() => [playBtn, settingsBtn, highscoresBtn])
+    };
+
+    const screenMenu = {
+        querySelector: mock.fn((sel) => {
+            if (sel === '.ui-btn-group') return btnGroup;
+            return null;
+        }),
+        querySelectorAll: mock.fn(() => []),
+        scrollTop: 0
+    };
+
+    let dataState = stateOverride || 'MENU';
+    let dataUi = null;
+
+    const container = {
+        getAttribute: mock.fn((attr) => {
+            if (attr === 'data-state') return dataState;
+            if (attr === 'data-ui') return dataUi;
+            return null;
+        }),
+        setAttribute: mock.fn((attr, val) => {
+            if (attr === 'data-state') dataState = val;
+            if (attr === 'data-ui') dataUi = val;
+        }),
+        removeAttribute: mock.fn((attr) => {
+            if (attr === 'data-ui') dataUi = null;
+        }),
+        hasAttribute: mock.fn((attr) => {
+            if (attr === 'data-ui') return dataUi !== null;
+            return false;
+        }),
+        querySelector: mock.fn((sel) => {
+            if (dataUi && sel === `.screen-${dataUi}`) return screenMenu;
+            // Map state selectors (PLAYING has no screen)
+            const stateMap = { 'MENU': '.screen-menu', 'PAUSED': '.screen-pause', 'GAMEOVER': '.screen-gameover' };
+            if (stateMap[dataState] && sel === stateMap[dataState]) return screenMenu;
+            return null;
+        }),
+        querySelectorAll: mock.fn(() => [])
+    };
+
+    const overlay = {
+        addEventListener: mock.fn(),
+        removeEventListener: mock.fn(),
+        querySelectorAll: mock.fn(() => [])
+    };
+
+    const audioMock = {
+        init: mock.fn(),
+        playNavigate: mock.fn(),
+        playConfirm: mock.fn(),
+        playBack: mock.fn(),
+        volume: 0.5,
+        muted: false
+    };
+
+    const gameMock = {
+        state: stateOverride === 'PAUSED' ? GameState.PAUSED :
+               stateOverride === 'GAMEOVER' ? GameState.GAMEOVER : GameState.MENU,
+        audio: audioMock,
+        animationStyle: 'smooth',
+        reducedMotion: false,
+        colorblindMode: false,
+        accessibilityMode: false,
+        difficulty: 'medium',
+        storage: { getUnlockedThemes: () => ['classic'], getLeaderboard: () => [] },
+        reset: mock.fn(),
+        setState: mock.fn((s) => { gameMock.state = s; }),
+    };
+
+    // Mock the DOM elements UIManager constructor looks for
+    const origGetElementById = global.document.getElementById;
+    const mockEl = {
+        setAttribute: mock.fn(),
+        getAttribute: mock.fn(() => null),
+        removeAttribute: mock.fn(),
+        addEventListener: mock.fn(),
+        value: '50',
+        textContent: '',
+        querySelectorAll: mock.fn(() => [])
+    };
+    global.document.getElementById = mock.fn(() => mockEl);
+
+    const ui = new UIManager(container, overlay, gameMock);
+
+    // Restore document mocks
+    global.document.addEventListener = origAddEventListener;
+    global.document.removeEventListener = origRemoveEventListener;
+    global.document.getElementById = origGetElementById;
+    if (origRAF) {
+        global.requestAnimationFrame = origRAF;
+    } else {
+        delete global.requestAnimationFrame;
+    }
+
+    return {
+        ui, container, gameMock, audioMock, keydownHandlers,
+        buttons: [playBtn, settingsBtn, highscoresBtn],
+        setDataUi: (val) => { dataUi = val; },
+        setDataState: (val) => { dataState = val; gameMock.state = val; }
+    };
+}
+
+describe('UIManager arrow-key navigation', () => {
+    test('_getNavigableButtons returns buttons from visible screen', () => {
+        const { ui, buttons } = createMockUIManager('MENU');
+        const result = ui._getNavigableButtons();
+        assert.strictEqual(result.length, 3);
+        assert.strictEqual(result[0], buttons[0]);
+    });
+
+    test('_getNavigableButtons returns empty array when no screen visible', () => {
+        const { ui, setDataState } = createMockUIManager('MENU');
+        setDataState('PLAYING');
+        const result = ui._getNavigableButtons();
+        assert.strictEqual(result.length, 0);
+    });
+
+    test('ArrowDown moves focus to first button when none focused', () => {
+        const { keydownHandlers, buttons } = createMockUIManager('MENU');
+        // Simulate no button focused
+        global.document.activeElement = {};
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'ArrowDown', preventDefault: mock.fn() });
+        assert.strictEqual(buttons[0].focus.mock.calls.length, 1);
+    });
+
+    test('ArrowDown wraps from last to first button', () => {
+        const { keydownHandlers, buttons } = createMockUIManager('MENU');
+        // Simulate last button focused
+        global.document.activeElement = buttons[2];
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'ArrowDown', preventDefault: mock.fn() });
+        assert.strictEqual(buttons[0].focus.mock.calls.length, 1);
+    });
+
+    test('ArrowUp wraps from first to last button', () => {
+        const { keydownHandlers, buttons } = createMockUIManager('MENU');
+        global.document.activeElement = buttons[0];
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'ArrowUp', preventDefault: mock.fn() });
+        assert.strictEqual(buttons[2].focus.mock.calls.length, 1);
+    });
+
+    test('Arrow keys play navigate sound', () => {
+        const { keydownHandlers, audioMock } = createMockUIManager('MENU');
+        global.document.activeElement = {};
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'ArrowDown', preventDefault: mock.fn() });
+        assert.strictEqual(audioMock.playNavigate.mock.calls.length, 1);
+    });
+
+    test('Arrow keys skip when data-ui is initials', () => {
+        const { keydownHandlers, buttons, setDataUi } = createMockUIManager('GAMEOVER');
+        setDataUi('initials');
+        global.document.activeElement = {};
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'ArrowDown', preventDefault: mock.fn() });
+        assert.strictEqual(buttons[0].focus.mock.calls.length, 0);
+    });
+
+    test('Arrow keys skip when active element is range input', () => {
+        const { keydownHandlers, buttons } = createMockUIManager('MENU');
+        global.document.activeElement = { type: 'range' };
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'ArrowDown', preventDefault: mock.fn() });
+        assert.strictEqual(buttons[0].focus.mock.calls.length, 0);
+    });
+});
+
+describe('UIManager backspace navigation', () => {
+    test('Backspace closes settings modal', () => {
+        const { keydownHandlers, setDataUi, audioMock } = createMockUIManager('MENU');
+        setDataUi('settings');
+        global.document.activeElement = { tagName: 'BUTTON' };
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'Backspace', preventDefault: mock.fn() });
+        assert.strictEqual(audioMock.playBack.mock.calls.length, 1);
+    });
+
+    test('Backspace closes leaderboard modal', () => {
+        const { keydownHandlers, setDataUi, audioMock } = createMockUIManager('MENU');
+        setDataUi('leaderboard');
+        global.document.activeElement = { tagName: 'BUTTON' };
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'Backspace', preventDefault: mock.fn() });
+        assert.strictEqual(audioMock.playBack.mock.calls.length, 1);
+    });
+
+    test('Backspace resumes from pause state', () => {
+        const { keydownHandlers, gameMock, audioMock } = createMockUIManager('PAUSED');
+        global.document.activeElement = { tagName: 'BUTTON' };
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'Backspace', preventDefault: mock.fn() });
+        assert.strictEqual(audioMock.playConfirm.mock.calls.length, 1);
+        assert.strictEqual(gameMock.setState.mock.calls.length, 1);
+        assert.strictEqual(gameMock.setState.mock.calls[0].arguments[0], GameState.PLAYING);
+    });
+
+    test('Backspace returns to menu from gameover', () => {
+        const { keydownHandlers, gameMock, audioMock } = createMockUIManager('GAMEOVER');
+        global.document.activeElement = { tagName: 'BUTTON' };
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'Backspace', preventDefault: mock.fn() });
+        assert.strictEqual(audioMock.playBack.mock.calls.length, 1);
+        assert.strictEqual(gameMock.reset.mock.calls.length, 1);
+    });
+
+    test('Backspace skips when data-ui is initials', () => {
+        const { keydownHandlers, setDataUi, audioMock } = createMockUIManager('GAMEOVER');
+        setDataUi('initials');
+        global.document.activeElement = { tagName: 'DIV' };
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'Backspace', preventDefault: mock.fn() });
+        assert.strictEqual(audioMock.playBack.mock.calls.length, 0);
+        assert.strictEqual(audioMock.playConfirm.mock.calls.length, 0);
+    });
+
+    test('Backspace skips when active element is INPUT', () => {
+        const { keydownHandlers, audioMock } = createMockUIManager('MENU');
+        global.document.activeElement = { tagName: 'INPUT' };
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'Backspace', preventDefault: mock.fn() });
+        assert.strictEqual(audioMock.playBack.mock.calls.length, 0);
+    });
+
+    test('Backspace is no-op on menu state', () => {
+        const { keydownHandlers, gameMock, audioMock } = createMockUIManager('MENU');
+        global.document.activeElement = { tagName: 'BUTTON' };
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'Backspace', preventDefault: mock.fn() });
+        assert.strictEqual(audioMock.playBack.mock.calls.length, 0);
+        assert.strictEqual(audioMock.playConfirm.mock.calls.length, 0);
+        assert.strictEqual(gameMock.setState.mock.calls.length, 0);
+    });
+});
+
+describe('UIManager updateState auto-focus', () => {
+    test('updateState sets data-state attribute', () => {
+        const { ui, container } = createMockUIManager('MENU');
+        global.requestAnimationFrame = mock.fn((cb) => cb());
+        ui.updateState('PAUSED');
+        assert.ok(container.setAttribute.mock.calls.some(
+            c => c.arguments[0] === 'data-state' && c.arguments[1] === 'PAUSED'
+        ));
+        delete global.requestAnimationFrame;
+    });
+
+    test('updateState auto-focuses first button on MENU transition', () => {
+        const { ui, buttons, setDataState } = createMockUIManager('PLAYING');
+        setDataState('PLAYING'); // Start from PLAYING (no buttons visible)
+        global.requestAnimationFrame = mock.fn((cb) => cb());
+        // Reset focus call counts
+        buttons.forEach(b => b.focus.mock.resetCalls());
+        setDataState('MENU');
+        ui.updateState('MENU');
+        assert.strictEqual(buttons[0].focus.mock.calls.length, 1);
+        delete global.requestAnimationFrame;
+    });
+});
+
+describe('UIManager destroy cleanup', () => {
+    test('destroy removes menu keydown handler', () => {
+        const origRemove = global.document.removeEventListener;
+        const removeCalls = [];
+        global.document.removeEventListener = mock.fn((event, handler) => {
+            removeCalls.push({ event, handler });
+        });
+
+        const { ui } = createMockUIManager('MENU');
+        ui.destroy();
+
+        const keydownRemovals = removeCalls.filter(c => c.event === 'keydown');
+        assert.ok(keydownRemovals.length > 0, 'Should remove keydown listener on destroy');
+
+        global.document.removeEventListener = origRemove;
     });
 });

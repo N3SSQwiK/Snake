@@ -99,7 +99,7 @@ const THEMES = {
         name: 'Classic',
         colors: {
             background: '#0a0a0f',
-            grid: '#1a1a24',
+            grid: '#5a5a7d',
             snake: '#10b981',
             snakeHead: '#059669',
             snakeTail: '#34d399',
@@ -124,7 +124,7 @@ const THEMES = {
             glassHighlight: 'rgba(255, 255, 255, 0.15)',
             textPrimary: 'rgba(255, 255, 255, 0.95)',
             textSecondary: 'rgba(255, 255, 255, 0.60)',
-            textMuted: 'rgba(255, 255, 255, 0.40)',
+            textMuted: 'rgba(255, 255, 255, 0.46)',
             gold: '#f59e0b',
             goldGlow: 'rgba(245, 158, 11, 0.4)'
         },
@@ -134,7 +134,7 @@ const THEMES = {
         name: 'Dark',
         colors: {
             background: '#0c0c10',
-            grid: '#18181f',
+            grid: '#5c5c76',
             snake: '#7c8ca1',
             snakeHead: '#94a3b8',
             snakeTail: '#64748b',
@@ -159,7 +159,7 @@ const THEMES = {
             glassHighlight: 'rgba(255, 255, 255, 0.10)',
             textPrimary: 'rgba(226, 232, 240, 0.92)',
             textSecondary: 'rgba(226, 232, 240, 0.50)',
-            textMuted: 'rgba(226, 232, 240, 0.30)',
+            textMuted: 'rgba(226, 232, 240, 0.50)',
             gold: '#d4915e',
             goldGlow: 'rgba(212, 145, 94, 0.35)'
         },
@@ -169,14 +169,14 @@ const THEMES = {
         name: 'Light',
         colors: {
             background: '#e8e4df',
-            grid: '#d6d1ca',
+            grid: '#8e816e',
             snake: '#2d6a4f',
             snakeHead: '#1b4332',
             snakeTail: '#40916c',
             snakeGlow: 'rgba(45, 106, 79, 0.25)',
             snakeEyes: 'rgba(255, 255, 255, 0.9)',
             food: '#c1453b',
-            bonusFood: '#c77a2e',
+            bonusFood: '#ba722b',
             poisonFood: '#7b4d9e',
             foodStem: '#6b5545',
             foodLeaf: '#3a7d44',
@@ -193,10 +193,10 @@ const THEMES = {
             glassBorder: 'rgba(0, 0, 0, 0.08)',
             glassHighlight: 'rgba(0, 0, 0, 0.12)',
             textPrimary: 'rgba(30, 30, 30, 0.92)',
-            textSecondary: 'rgba(30, 30, 30, 0.55)',
-            textMuted: 'rgba(30, 30, 30, 0.35)',
-            gold: '#c77a2e',
-            goldGlow: 'rgba(199, 122, 46, 0.3)'
+            textSecondary: 'rgba(30, 30, 30, 0.64)',
+            textMuted: 'rgba(30, 30, 30, 0.64)',
+            gold: '#ba722b',
+            goldGlow: 'rgba(186, 114, 43, 0.3)'
         },
         unlockCondition: { type: 'score', threshold: 100 }
     },
@@ -204,7 +204,7 @@ const THEMES = {
         name: 'Retro',
         colors: {
             background: '#1a120e',
-            grid: '#2a1f18',
+            grid: '#7b5b46',
             snake: '#d4883a',
             snakeHead: '#e09940',
             snakeTail: '#b87330',
@@ -229,7 +229,7 @@ const THEMES = {
             glassHighlight: 'rgba(232, 213, 176, 0.14)',
             textPrimary: 'rgba(232, 213, 176, 0.92)',
             textSecondary: 'rgba(232, 213, 176, 0.55)',
-            textMuted: 'rgba(232, 213, 176, 0.35)',
+            textMuted: 'rgba(232, 213, 176, 0.55)',
             gold: '#e6c84d',
             goldGlow: 'rgba(230, 200, 77, 0.35)'
         },
@@ -239,7 +239,7 @@ const THEMES = {
         name: 'Neon',
         colors: {
             background: '#080810',
-            grid: '#101020',
+            grid: '#5353a7',
             snake: '#22d3ee',
             snakeHead: '#06b6d4',
             snakeTail: '#67e8f9',
@@ -264,7 +264,7 @@ const THEMES = {
             glassHighlight: 'rgba(255, 255, 255, 0.14)',
             textPrimary: 'rgba(224, 242, 254, 0.95)',
             textSecondary: 'rgba(224, 242, 254, 0.55)',
-            textMuted: 'rgba(224, 242, 254, 0.35)',
+            textMuted: 'rgba(224, 242, 254, 0.49)',
             gold: '#fbbf24',
             goldGlow: 'rgba(251, 191, 36, 0.4)'
         },
@@ -274,7 +274,7 @@ const THEMES = {
         name: 'High Contrast',
         colors: {
             background: '#000000',
-            grid: '#333333',
+            grid: '#5a5a5a',
             snake: '#00ff00',
             snakeHead: '#ffffff',
             snakeTail: '#00cc00',
@@ -1475,6 +1475,105 @@ class UIManager {
         this._previouslyFocusedElement = null;
         this._focusTrapHandler = null;
         this._currentFocusTrapContainer = null;
+
+        // Persistent menu keydown handler for arrow navigation + backspace
+        this._handleMenuKeyDown = this._handleMenuKeyDown.bind(this);
+        document.addEventListener('keydown', this._handleMenuKeyDown);
+    }
+
+    _getVisibleScreen() {
+        // Modals (data-ui) take priority over state screens
+        const dataUi = this.container.getAttribute('data-ui');
+        if (dataUi) {
+            return this.container.querySelector(`.screen-${dataUi}`);
+        }
+        const dataState = this.container.getAttribute('data-state');
+        if (dataState) {
+            const stateMap = {
+                'MENU': '.screen-menu',
+                'PAUSED': '.screen-pause',
+                'GAMEOVER': '.screen-gameover'
+            };
+            return this.container.querySelector(stateMap[dataState]) || null;
+        }
+        return null;
+    }
+
+    _getNavigableButtons() {
+        const screen = this._getVisibleScreen();
+        if (!screen) return [];
+        const group = screen.querySelector('.ui-btn-group');
+        if (!group) return [];
+        return Array.from(group.querySelectorAll('.ui-btn'))
+            .filter(btn => btn.offsetParent !== null && !btn.disabled);
+    }
+
+    _handleMenuKeyDown(e) {
+        const dataUi = this.container.getAttribute('data-ui');
+
+        // ArrowUp / ArrowDown: cycle focus between buttons
+        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            // Skip when initials modal is open (has its own arrow handler)
+            if (dataUi === 'initials') return;
+            // Skip when a range input (volume slider) is focused — needs native arrows
+            if (document.activeElement && document.activeElement.type === 'range') return;
+
+            const buttons = this._getNavigableButtons();
+            if (buttons.length === 0) return;
+
+            e.preventDefault();
+            const currentIndex = buttons.indexOf(document.activeElement);
+            let nextIndex;
+            if (e.key === 'ArrowDown') {
+                nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % buttons.length;
+            } else {
+                nextIndex = currentIndex < 0 ? buttons.length - 1 : (currentIndex - 1 + buttons.length) % buttons.length;
+            }
+            buttons[nextIndex].focus();
+            this.game.audio.init();
+            this.game.audio.playNavigate();
+            return;
+        }
+
+        // Backspace / Delete: navigate back
+        if (e.key === 'Backspace' || e.key === 'Delete') {
+            // Skip when initials modal is open or active element is an input
+            if (dataUi === 'initials') return;
+            const tag = document.activeElement ? document.activeElement.tagName : '';
+            if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+            e.preventDefault();
+
+            if (dataUi === 'shortcuts') {
+                this.hideShortcuts();
+                return;
+            }
+            if (dataUi === 'leaderboard') {
+                this.game.audio.playBack();
+                this.hideLeaderboard();
+                return;
+            }
+            if (dataUi === 'settings') {
+                this.game.audio.playBack();
+                this.hideSettings();
+                return;
+            }
+
+            // No modal open — act on game state
+            const state = this.game.state;
+            if (state === GameState.PAUSED) {
+                this.game.audio.playConfirm();
+                this.game.setState(GameState.PLAYING);
+                return;
+            }
+            if (state === GameState.GAMEOVER) {
+                this.game.audio.playBack();
+                this.game.reset();
+                this.game.setState(GameState.MENU);
+                return;
+            }
+            // MENU / PLAYING: no-op
+        }
     }
 
     _attachButtonSounds() {
@@ -1578,6 +1677,18 @@ class UIManager {
         this.container.setAttribute('data-state', newState);
         // Settings modal has its own lifecycle (showSettings/hideSettings)
         // — don't touch data-ui here
+
+        // Auto-focus first button when transitioning to a menu screen
+        if (newState === GameState.MENU || newState === GameState.PAUSED || newState === GameState.GAMEOVER) {
+            requestAnimationFrame(() => {
+                // Skip if a modal (data-ui) is active (e.g., initials entry after gameover)
+                if (this.container.hasAttribute('data-ui')) return;
+                const buttons = this._getNavigableButtons();
+                if (buttons.length > 0) {
+                    buttons[0].focus();
+                }
+            });
+        }
     }
 
     showSettings() {
@@ -2165,6 +2276,7 @@ class UIManager {
 
     destroy() {
         this.overlay.removeEventListener('click', this.handleOverlayClick);
+        document.removeEventListener('keydown', this._handleMenuKeyDown);
     }
 }
 
