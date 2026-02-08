@@ -1612,6 +1612,12 @@ class UIManager {
 
     // Sets up focus trapping for a modal container
     _trapFocus(containerSelector) {
+        // Release any existing focus trap to prevent stale handlers
+        if (this._focusTrapHandler) {
+            document.removeEventListener('keydown', this._focusTrapHandler);
+            this._focusTrapHandler = null;
+        }
+
         // Store previously focused element
         this._previouslyFocusedElement = document.activeElement;
 
