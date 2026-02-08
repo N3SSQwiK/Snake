@@ -2836,6 +2836,27 @@ describe('UIManager arrow-key navigation', () => {
         assert.strictEqual(result.length, 0);
     });
 
+    test('_getNavigableButtons falls back to focusable elements when no btn-group', () => {
+        const { ui, setDataUi, container } = createMockUIManager('MENU');
+        // Simulate settings screen with no .ui-btn-group but with focusable elements
+        const closeBtn = { tagName: 'BUTTON', offsetParent: {} };
+        const toggle = { tagName: 'BUTTON', offsetParent: {} };
+        const settingsScreen = {
+            querySelector: mock.fn(() => null), // no .ui-btn-group
+            querySelectorAll: mock.fn(() => [closeBtn, toggle])
+        };
+        setDataUi('settings');
+        // Override container.querySelector to return our custom settings screen
+        const origQS = container.querySelector;
+        container.querySelector = mock.fn((sel) => {
+            if (sel === '.screen-settings') return settingsScreen;
+            return origQS(sel);
+        });
+        const result = ui._getNavigableButtons();
+        assert.ok(result.length > 0, 'Should return focusable elements from settings screen');
+        container.querySelector = origQS;
+    });
+
     test('ArrowDown moves focus to first button when none focused', () => {
         const { keydownHandlers, buttons } = createMockUIManager('MENU');
         // Simulate no button focused
@@ -2879,12 +2900,26 @@ describe('UIManager arrow-key navigation', () => {
         assert.strictEqual(buttons[0].focus.mock.calls.length, 0);
     });
 
-    test('Arrow keys skip when active element is range input', () => {
-        const { keydownHandlers, buttons } = createMockUIManager('MENU');
-        global.document.activeElement = { type: 'range' };
+    test('ArrowDown navigates away from range input', () => {
+        const { ui, keydownHandlers, container, setDataUi } = createMockUIManager('MENU');
+        setDataUi('settings');
+        // Create a mock settings screen with a range input and a button
+        const rangeInput = { tagName: 'INPUT', type: 'range', offsetParent: {} };
+        const nextBtn = { tagName: 'BUTTON', offsetParent: {}, focus: mock.fn() };
+        const settingsScreen = {
+            querySelector: mock.fn(() => null), // no .ui-btn-group
+            querySelectorAll: mock.fn(() => [rangeInput, nextBtn])
+        };
+        const origQS = container.querySelector;
+        container.querySelector = mock.fn((sel) => {
+            if (sel === '.screen-settings') return settingsScreen;
+            return origQS(sel);
+        });
+        global.document.activeElement = rangeInput;
         const handler = keydownHandlers[keydownHandlers.length - 1];
         handler({ key: 'ArrowDown', preventDefault: mock.fn() });
-        assert.strictEqual(buttons[0].focus.mock.calls.length, 0);
+        assert.strictEqual(nextBtn.focus.mock.calls.length, 1);
+        container.querySelector = origQS;
     });
 });
 

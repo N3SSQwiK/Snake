@@ -1425,6 +1425,7 @@ class UIManager {
         this.reduceMotionToggle = document.getElementById('reduce-motion-toggle');
         this.colorblindModeToggle = document.getElementById('colorblind-mode-toggle');
         this.accessibilityModeToggle = document.getElementById('accessibility-mode-toggle');
+        this.animationHint = document.getElementById('animation-hint');
 
         // Initials entry state
         this._initialsChars = [0, 0, 0]; // A=0, B=1, ... Z=25
@@ -1437,8 +1438,8 @@ class UIManager {
         this.animationToggle.setAttribute('aria-checked',
             String(this.game.animationStyle === 'smooth'));
         if (this.game.reducedMotion) {
-            this.animationToggle.setAttribute('disabled', '');
             this.animationToggle.setAttribute('aria-disabled', 'true');
+            if (this.animationHint) this.animationHint.hidden = false;
         }
         if (this.reduceMotionToggle) {
             this.reduceMotionToggle.setAttribute('aria-checked',
@@ -1503,9 +1504,12 @@ class UIManager {
         const screen = this._getVisibleScreen();
         if (!screen) return [];
         const group = screen.querySelector('.ui-btn-group');
-        if (!group) return [];
-        return Array.from(group.querySelectorAll('.ui-btn'))
-            .filter(btn => btn.offsetParent !== null && !btn.disabled);
+        if (group) {
+            return Array.from(group.querySelectorAll('.ui-btn'))
+                .filter(btn => btn.offsetParent !== null && !btn.disabled);
+        }
+        // Screens without a btn-group (e.g. settings): navigate all focusable elements
+        return this._getFocusableElements(screen);
     }
 
     _handleMenuKeyDown(e) {
@@ -1515,8 +1519,6 @@ class UIManager {
         if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
             // Skip when initials modal is open (has its own arrow handler)
             if (dataUi === 'initials') return;
-            // Skip when a range input (volume slider) is focused — needs native arrows
-            if (document.activeElement && document.activeElement.type === 'range') return;
 
             const buttons = this._getNavigableButtons();
             if (buttons.length === 0) return;
@@ -1696,11 +1698,12 @@ class UIManager {
         this.animationToggle.setAttribute('aria-checked',
             String(this.game.animationStyle === 'smooth'));
         if (this.game.reducedMotion) {
-            this.animationToggle.setAttribute('disabled', '');
             this.animationToggle.setAttribute('aria-disabled', 'true');
         } else {
-            this.animationToggle.removeAttribute('disabled');
             this.animationToggle.removeAttribute('aria-disabled');
+        }
+        if (this.animationHint) {
+            this.animationHint.hidden = !this.game.reducedMotion;
         }
         if (this.reduceMotionToggle) {
             this.reduceMotionToggle.setAttribute('aria-checked',
@@ -2232,11 +2235,12 @@ class UIManager {
                 this.reduceMotionToggle.setAttribute('aria-checked', String(newReducedMotion));
                 if (newReducedMotion) {
                     this.animationToggle.setAttribute('aria-checked', 'false');
-                    this.animationToggle.setAttribute('disabled', '');
                     this.animationToggle.setAttribute('aria-disabled', 'true');
                 } else {
-                    this.animationToggle.removeAttribute('disabled');
                     this.animationToggle.removeAttribute('aria-disabled');
+                }
+                if (this.animationHint) {
+                    this.animationHint.hidden = !newReducedMotion;
                 }
                 break;
             }

@@ -134,14 +134,6 @@
                             </button>
                         </div>
                     </div>
-                    <div class="ui-setting-row">
-                        <label class="ui-label" for="animation-style-toggle">Smooth Animation</label>
-                        <button class="ui-toggle" id="animation-style-toggle" role="switch" aria-checked="true" data-action="toggle-animation-style">
-                            <span class="ui-toggle__track">
-                                <span class="ui-toggle__thumb"></span>
-                            </span>
-                        </button>
-                    </div>
                     <div class="ui-setting-group">
                         <label class="ui-label">Sound</label>
                         <div class="ui-setting-row">
@@ -170,6 +162,15 @@
                                 </span>
                             </button>
                         </div>
+                        <div class="ui-setting-row">
+                            <label class="ui-label ui-label--small" for="animation-style-toggle">Smooth Animation</label>
+                            <button class="ui-toggle" id="animation-style-toggle" role="switch" aria-checked="true" data-action="toggle-animation-style">
+                                <span class="ui-toggle__track">
+                                    <span class="ui-toggle__thumb"></span>
+                                </span>
+                            </button>
+                        </div>
+                        <p class="ui-setting-hint" id="animation-hint" hidden>Disabled by Reduce Motion</p>
                         <div class="ui-setting-row">
                             <label class="ui-label ui-label--small" for="colorblind-mode-toggle">Shape Outlines</label>
                             <button class="ui-toggle" id="colorblind-mode-toggle" role="switch" aria-checked="false" data-action="toggle-colorblind-mode">
