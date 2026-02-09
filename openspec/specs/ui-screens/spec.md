@@ -79,11 +79,11 @@ The system SHALL display an animated game over screen when the game ends.
 - **THEN** the game transitions to MENU state
 
 ### Requirement: Settings Screen
-The system SHALL provide a settings screen as a modal overlay that does not change the game state. The system SHALL track the previous screen so the back button returns to the correct context.
+The system SHALL provide a settings screen as a modal overlay that does not change the game state. The system SHALL track the previous screen so the back button returns to the correct context. The system SHALL display animated previews for the Difficulty selector, Smooth Animation toggle, and theme swatches.
 
 #### Scenario: Settings display
 - **WHEN** the player opens settings
-- **THEN** current settings are displayed with toggle controls
+- **THEN** current settings are displayed with controls and animated previews
 
 #### Scenario: Settings from menu
 - **GIVEN** the game is in MENU state
@@ -95,20 +95,15 @@ The system SHALL provide a settings screen as a modal overlay that does not chan
 - **WHEN** the player opens settings and clicks back
 - **THEN** the pause overlay is displayed
 
-#### Scenario: Wall collision toggle
+#### Scenario: Difficulty selector
 - **GIVEN** the settings screen is displayed
-- **WHEN** the player toggles wall collision
-- **THEN** the setting is updated and saved immediately
+- **WHEN** the player selects a difficulty option
+- **THEN** the setting is updated and saved immediately and the difficulty preview canvas updates
 
 #### Scenario: Return from settings
 - **GIVEN** the settings screen is displayed
-- **WHEN** the player clicks back
-- **THEN** the previous screen is displayed
-
-#### Scenario: Keyboard actions blocked during settings
-- **GIVEN** the settings screen is displayed
-- **WHEN** the player presses spacebar or Escape
-- **THEN** the keypresses are ignored and game state does not change
+- **WHEN** the player navigates back (Backspace or close button)
+- **THEN** the previous screen is displayed and all preview animations are stopped
 
 ### Requirement: Mobile Pause Button
 The system SHALL display a pause button on touch devices.
