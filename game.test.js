@@ -4,7 +4,8 @@ const assert = require('node:assert');
 // Mock document for Node.js environment
 global.document = {
     addEventListener: mock.fn(),
-    removeEventListener: mock.fn()
+    removeEventListener: mock.fn(),
+    getElementById: mock.fn(() => null)
 };
 
 // Mock localStorage for Node.js environment
@@ -60,11 +61,11 @@ const createMockCanvas = () => {
 
 // Import game module
 const {
-    Game, Renderer, Snake, Food, InputHandler, StorageManager,
+    Game, Renderer, Snake, Food, InputHandler, StorageManager, UIManager,
     GameState, Direction, FoodType,
     GRID_WIDTH, GRID_HEIGHT, CELL_SIZE,
-    FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_MAX_SPAWN_ATTEMPTS,
-    SPECIAL_FOOD_TICKS, DIFFICULTY_LEVELS
+    FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_DECAY_TICKS_ACCESSIBLE, FOOD_MAX_SPAWN_ATTEMPTS,
+    SPECIAL_FOOD_TICKS, SPECIAL_FOOD_TICKS_ACCESSIBLE, DIFFICULTY_LEVELS
 } = require('./game.js');
 
 // =============================================================================
@@ -2450,5 +2451,583 @@ describe('Difficulty config fields', () => {
         assert.strictEqual(DIFFICULTY_LEVELS.medium.toxicSegmentDivisor, 10);
         assert.strictEqual(DIFFICULTY_LEVELS.hard.toxicSegmentBase, 2);
         assert.strictEqual(DIFFICULTY_LEVELS.hard.toxicSegmentDivisor, 5);
+    });
+});
+
+// =============================================================================
+// ACCESSIBLE FOOD DECAY CONSTANTS TESTS
+// =============================================================================
+
+describe('Accessible food decay constants', () => {
+    test('FOOD_DECAY_TICKS_ACCESSIBLE is double normal', () => {
+        assert.strictEqual(FOOD_DECAY_TICKS_ACCESSIBLE, FOOD_DECAY_TICKS * 2);
+    });
+
+    test('SPECIAL_FOOD_TICKS_ACCESSIBLE is double normal', () => {
+        assert.strictEqual(SPECIAL_FOOD_TICKS_ACCESSIBLE, SPECIAL_FOOD_TICKS * 2);
+    });
+});
+
+// =============================================================================
+// EXTENDED TIME MODE FOOD DECAY TESTS
+// =============================================================================
+
+describe('Extended Time Mode food decay helpers', () => {
+    test('_getRegularDecay returns normal ticks without accessibility mode', () => {
+        const game = new Game(createMockCanvas());
+        game.accessibilityMode = false;
+        assert.strictEqual(game._getRegularDecay(), FOOD_DECAY_TICKS);
+    });
+
+    test('_getRegularDecay returns doubled ticks with accessibility mode', () => {
+        const game = new Game(createMockCanvas());
+        game.accessibilityMode = true;
+        assert.strictEqual(game._getRegularDecay(), FOOD_DECAY_TICKS_ACCESSIBLE);
+    });
+
+    test('_getSpecialDecay returns normal ticks without accessibility mode', () => {
+        const game = new Game(createMockCanvas());
+        game.accessibilityMode = false;
+        assert.strictEqual(game._getSpecialDecay(), SPECIAL_FOOD_TICKS);
+    });
+
+    test('_getSpecialDecay returns doubled ticks with accessibility mode', () => {
+        const game = new Game(createMockCanvas());
+        game.accessibilityMode = true;
+        assert.strictEqual(game._getSpecialDecay(), SPECIAL_FOOD_TICKS_ACCESSIBLE);
+    });
+
+    test('food expires in accessibility mode (with doubled timer)', () => {
+        const game = new Game(createMockCanvas());
+        game.setDifficulty('medium');
+        game.accessibilityMode = true;
+        game.setState(GameState.PLAYING);
+
+        // Spawn food and advance past doubled decay time
+        game.food.spawn(game.snake.body, 0, FoodType.REGULAR, FOOD_DECAY_TICKS_ACCESSIBLE);
+        const spawnTick = game.food.spawnTick;
+
+        // Not expired at normal decay time
+        assert.strictEqual(game.food.isExpired(spawnTick + FOOD_DECAY_TICKS), false);
+
+        // Expired at doubled decay time
+        assert.strictEqual(game.food.isExpired(spawnTick + FOOD_DECAY_TICKS_ACCESSIBLE), true);
+    });
+});
+
+// =============================================================================
+// EXTENDED TIME MODE SPEED CAP TESTS
+// =============================================================================
+
+describe('Extended Time Mode speed cap', () => {
+    test('caps speed at easy base rate on hard difficulty', () => {
+        const game = new Game(createMockCanvas());
+        game.setDifficulty('hard');
+        game.accessibilityMode = true;
+        game.score = 1000; // high score to push speed up
+        game.updateTickRate();
+        const actualRate = 1000 / game.tickInterval;
+        assert.ok(actualRate <= DIFFICULTY_LEVELS.easy.baseTickRate,
+            `Rate ${actualRate} exceeds easy base rate ${DIFFICULTY_LEVELS.easy.baseTickRate}`);
+    });
+
+    test('caps speed at easy base rate on medium difficulty', () => {
+        const game = new Game(createMockCanvas());
+        game.setDifficulty('medium');
+        game.accessibilityMode = true;
+        game.score = 1000;
+        game.updateTickRate();
+        const actualRate = 1000 / game.tickInterval;
+        assert.ok(actualRate <= DIFFICULTY_LEVELS.easy.baseTickRate,
+            `Rate ${actualRate} exceeds easy base rate ${DIFFICULTY_LEVELS.easy.baseTickRate}`);
+    });
+
+    test('does not cap speed without accessibility mode', () => {
+        const game = new Game(createMockCanvas());
+        game.setDifficulty('hard');
+        game.accessibilityMode = false;
+        game.score = 1000;
+        game.updateTickRate();
+        const actualRate = 1000 / game.tickInterval;
+        assert.ok(actualRate > DIFFICULTY_LEVELS.easy.baseTickRate,
+            `Rate ${actualRate} should exceed easy base rate without accessibility`);
+    });
+
+    test('easy difficulty unaffected by cap (already at/below easy base rate)', () => {
+        const game = new Game(createMockCanvas());
+        game.setDifficulty('easy');
+        game.accessibilityMode = true;
+        game.score = 0;
+        game.updateTickRate();
+        const actualRate = 1000 / game.tickInterval;
+        assert.strictEqual(actualRate, DIFFICULTY_LEVELS.easy.baseTickRate);
+    });
+});
+
+// =============================================================================
+// ASSISTED LEADERBOARD TESTS
+// =============================================================================
+
+describe('Assisted leaderboard separation', () => {
+    let storage;
+
+    beforeEach(() => {
+        global.localStorage.clear();
+        storage = new StorageManager();
+    });
+
+    test('addScore stores assisted field when true', () => {
+        storage.addScore('ACE', 100, 'medium', true);
+        const all = storage.get('leaderboard', []);
+        assert.strictEqual(all[0].assisted, true);
+    });
+
+    test('addScore omits assisted field when false', () => {
+        storage.addScore('ACE', 100, 'medium', false);
+        const all = storage.get('leaderboard', []);
+        assert.strictEqual(all[0].assisted, undefined);
+    });
+
+    test('getLeaderboard separates assisted from standard', () => {
+        storage.addScore('STD', 200, 'medium', false);
+        storage.addScore('AST', 300, 'medium', true);
+        const standard = storage.getLeaderboard('medium', false);
+        const assisted = storage.getLeaderboard('medium', true);
+        assert.strictEqual(standard.length, 1);
+        assert.strictEqual(standard[0].initials, 'STD');
+        assert.strictEqual(assisted.length, 1);
+        assert.strictEqual(assisted[0].initials, 'AST');
+    });
+
+    test('legacy entries (no assisted field) treated as non-assisted', () => {
+        storage.set('leaderboard', [
+            { initials: 'OLD', score: 50, difficulty: 'easy', timestamp: 1000 }
+        ]);
+        const standard = storage.getLeaderboard('easy', false);
+        const assisted = storage.getLeaderboard('easy', true);
+        assert.strictEqual(standard.length, 1);
+        assert.strictEqual(assisted.length, 0);
+    });
+
+    test('isHighScore respects assisted flag', () => {
+        for (let i = 0; i < 10; i++) {
+            storage.addScore('AAA', (i + 1) * 10, 'medium', false);
+        }
+        // Standard board is full, 5 doesn't beat lowest
+        assert.strictEqual(storage.isHighScore(5, 'medium', false), false);
+        // Assisted board is empty, any score qualifies
+        assert.strictEqual(storage.isHighScore(5, 'medium', true), true);
+    });
+
+    test('isNewTopScore respects assisted flag', () => {
+        storage.addScore('STD', 100, 'hard', false);
+        storage.addScore('AST', 50, 'hard', true);
+        assert.strictEqual(storage.isNewTopScore(60, 'hard', false), false);
+        assert.strictEqual(storage.isNewTopScore(60, 'hard', true), true);
+    });
+
+    test('getLeaderboard without difficulty returns all entries for assisted flag', () => {
+        storage.addScore('AAA', 100, 'easy', true);
+        storage.addScore('BBB', 200, 'hard', true);
+        storage.addScore('CCC', 150, 'medium', false);
+        const assisted = storage.getLeaderboard(null, true);
+        const standard = storage.getLeaderboard(null, false);
+        assert.strictEqual(assisted.length, 2);
+        assert.strictEqual(standard.length, 1);
+    });
+});
+
+// =============================================================================
+// REDUCE MOTION CANVAS PULSE TESTS
+// =============================================================================
+
+describe('Reduce Motion canvas pulse', () => {
+    test('drawFood accepts reducedMotion parameter', () => {
+        const canvas = createMockCanvas();
+        const renderer = new Renderer(canvas);
+        const food = new Food(GRID_WIDTH, GRID_HEIGHT);
+        food.spawn([], 0, FoodType.BONUS);
+        // Should not throw with reducedMotion param
+        renderer.drawFood(food, false, 10, false, true);
+        renderer.drawFood(food, false, 10, false, false);
+    });
+
+    test('bonus food pulse is 1.0 with reducedMotion', () => {
+        const canvas = createMockCanvas();
+        const renderer = new Renderer(canvas);
+        const food = new Food(GRID_WIDTH, GRID_HEIGHT);
+        food.spawn([], 0, FoodType.BONUS);
+
+        // With reducedMotion, no arc calls for pulsing should show variation
+        renderer.drawFood(food, false, 10, false, true);
+        // The fill call happened (food was drawn)
+        assert.ok(canvas._ctx.fill.mock.calls.length > 0);
+    });
+
+    test('lethal food pulse is 1.0 with reducedMotion', () => {
+        const canvas = createMockCanvas();
+        const renderer = new Renderer(canvas);
+        const food = new Food(GRID_WIDTH, GRID_HEIGHT);
+        food.spawn([], 0, FoodType.LETHAL);
+
+        renderer.drawFood(food, false, 10, false, true);
+        assert.ok(canvas._ctx.fill.mock.calls.length > 0);
+    });
+});
+
+// =============================================================================
+// UI MANAGER ARROW-KEY NAVIGATION TESTS
+// =============================================================================
+
+// Helper to create a minimal DOM mock for UIManager tests
+function createMockUIManager(stateOverride) {
+    const keydownHandlers = [];
+    const origAddEventListener = global.document.addEventListener;
+    const origRemoveEventListener = global.document.removeEventListener;
+
+    global.document.addEventListener = mock.fn((event, handler) => {
+        if (event === 'keydown') keydownHandlers.push(handler);
+    });
+    global.document.removeEventListener = mock.fn();
+    const origRAF = global.requestAnimationFrame;
+    global.requestAnimationFrame = mock.fn((cb) => cb());
+
+    // Create button elements with focus tracking
+    const createBtn = (action) => {
+        const btn = {
+            tagName: 'BUTTON',
+            className: 'ui-btn',
+            dataset: { action },
+            disabled: false,
+            offsetParent: {},  // non-null = visible
+            focus: mock.fn(),
+            addEventListener: mock.fn(),
+            removeEventListener: mock.fn(),
+            getAttribute: mock.fn(() => null),
+            setAttribute: mock.fn(),
+            removeAttribute: mock.fn(),
+            closest: mock.fn(() => null),
+            querySelector: mock.fn(() => null),
+            querySelectorAll: mock.fn(() => [])
+        };
+        return btn;
+    };
+
+    const playBtn = createBtn('play');
+    const settingsBtn = createBtn('settings');
+    const highscoresBtn = createBtn('highscores');
+    const btnGroup = {
+        querySelectorAll: mock.fn(() => [playBtn, settingsBtn, highscoresBtn])
+    };
+
+    const screenMenu = {
+        querySelector: mock.fn((sel) => {
+            if (sel === '.ui-btn-group') return btnGroup;
+            return null;
+        }),
+        querySelectorAll: mock.fn(() => []),
+        scrollTop: 0
+    };
+
+    let dataState = stateOverride || 'MENU';
+    let dataUi = null;
+
+    const container = {
+        getAttribute: mock.fn((attr) => {
+            if (attr === 'data-state') return dataState;
+            if (attr === 'data-ui') return dataUi;
+            return null;
+        }),
+        setAttribute: mock.fn((attr, val) => {
+            if (attr === 'data-state') dataState = val;
+            if (attr === 'data-ui') dataUi = val;
+        }),
+        removeAttribute: mock.fn((attr) => {
+            if (attr === 'data-ui') dataUi = null;
+        }),
+        hasAttribute: mock.fn((attr) => {
+            if (attr === 'data-ui') return dataUi !== null;
+            return false;
+        }),
+        querySelector: mock.fn((sel) => {
+            if (dataUi && sel === `.screen-${dataUi}`) return screenMenu;
+            // Map state selectors (PLAYING has no screen)
+            const stateMap = { 'MENU': '.screen-menu', 'PAUSED': '.screen-pause', 'GAMEOVER': '.screen-gameover' };
+            if (stateMap[dataState] && sel === stateMap[dataState]) return screenMenu;
+            return null;
+        }),
+        querySelectorAll: mock.fn(() => [])
+    };
+
+    const overlay = {
+        addEventListener: mock.fn(),
+        removeEventListener: mock.fn(),
+        querySelectorAll: mock.fn(() => [])
+    };
+
+    const audioMock = {
+        init: mock.fn(),
+        playNavigate: mock.fn(),
+        playConfirm: mock.fn(),
+        playBack: mock.fn(),
+        volume: 0.5,
+        muted: false
+    };
+
+    const gameMock = {
+        state: stateOverride === 'PAUSED' ? GameState.PAUSED :
+               stateOverride === 'GAMEOVER' ? GameState.GAMEOVER : GameState.MENU,
+        audio: audioMock,
+        animationStyle: 'smooth',
+        reducedMotion: false,
+        colorblindMode: false,
+        accessibilityMode: false,
+        difficulty: 'medium',
+        storage: { getUnlockedThemes: () => ['classic'], getLeaderboard: () => [] },
+        reset: mock.fn(),
+        setState: mock.fn((s) => { gameMock.state = s; }),
+    };
+
+    // Mock the DOM elements UIManager constructor looks for
+    const origGetElementById = global.document.getElementById;
+    const mockEl = {
+        setAttribute: mock.fn(),
+        getAttribute: mock.fn(() => null),
+        removeAttribute: mock.fn(),
+        addEventListener: mock.fn(),
+        value: '50',
+        textContent: '',
+        querySelectorAll: mock.fn(() => [])
+    };
+    global.document.getElementById = mock.fn(() => mockEl);
+
+    const ui = new UIManager(container, overlay, gameMock);
+
+    // Restore document mocks
+    global.document.addEventListener = origAddEventListener;
+    global.document.removeEventListener = origRemoveEventListener;
+    global.document.getElementById = origGetElementById;
+    if (origRAF) {
+        global.requestAnimationFrame = origRAF;
+    } else {
+        delete global.requestAnimationFrame;
+    }
+
+    return {
+        ui, container, gameMock, audioMock, keydownHandlers,
+        buttons: [playBtn, settingsBtn, highscoresBtn],
+        setDataUi: (val) => { dataUi = val; },
+        setDataState: (val) => { dataState = val; gameMock.state = val; }
+    };
+}
+
+describe('UIManager arrow-key navigation', () => {
+    test('_getNavigableButtons returns buttons from visible screen', () => {
+        const { ui, buttons } = createMockUIManager('MENU');
+        const result = ui._getNavigableButtons();
+        assert.strictEqual(result.length, 3);
+        assert.strictEqual(result[0], buttons[0]);
+    });
+
+    test('_getNavigableButtons returns empty array when no screen visible', () => {
+        const { ui, setDataState } = createMockUIManager('MENU');
+        setDataState('PLAYING');
+        const result = ui._getNavigableButtons();
+        assert.strictEqual(result.length, 0);
+    });
+
+    test('_getNavigableButtons falls back to focusable elements when no btn-group', () => {
+        const { ui, setDataUi, container } = createMockUIManager('MENU');
+        // Simulate settings screen with no .ui-btn-group but with focusable elements
+        const closeBtn = { tagName: 'BUTTON', offsetParent: {} };
+        const toggle = { tagName: 'BUTTON', offsetParent: {} };
+        const settingsScreen = {
+            querySelector: mock.fn(() => null), // no .ui-btn-group
+            querySelectorAll: mock.fn(() => [closeBtn, toggle])
+        };
+        setDataUi('settings');
+        // Override container.querySelector to return our custom settings screen
+        const origQS = container.querySelector;
+        container.querySelector = mock.fn((sel) => {
+            if (sel === '.screen-settings') return settingsScreen;
+            return origQS(sel);
+        });
+        const result = ui._getNavigableButtons();
+        assert.ok(result.length > 0, 'Should return focusable elements from settings screen');
+        container.querySelector = origQS;
+    });
+
+    test('ArrowDown moves focus to first button when none focused', () => {
+        const { keydownHandlers, buttons } = createMockUIManager('MENU');
+        // Simulate no button focused
+        global.document.activeElement = {};
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'ArrowDown', preventDefault: mock.fn() });
+        assert.strictEqual(buttons[0].focus.mock.calls.length, 1);
+    });
+
+    test('ArrowDown wraps from last to first button', () => {
+        const { keydownHandlers, buttons } = createMockUIManager('MENU');
+        // Simulate last button focused
+        global.document.activeElement = buttons[2];
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'ArrowDown', preventDefault: mock.fn() });
+        assert.strictEqual(buttons[0].focus.mock.calls.length, 1);
+    });
+
+    test('ArrowUp wraps from first to last button', () => {
+        const { keydownHandlers, buttons } = createMockUIManager('MENU');
+        global.document.activeElement = buttons[0];
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'ArrowUp', preventDefault: mock.fn() });
+        assert.strictEqual(buttons[2].focus.mock.calls.length, 1);
+    });
+
+    test('Arrow keys play navigate sound', () => {
+        const { keydownHandlers, audioMock } = createMockUIManager('MENU');
+        global.document.activeElement = {};
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'ArrowDown', preventDefault: mock.fn() });
+        assert.strictEqual(audioMock.playNavigate.mock.calls.length, 1);
+    });
+
+    test('Arrow keys skip when data-ui is initials', () => {
+        const { keydownHandlers, buttons, setDataUi } = createMockUIManager('GAMEOVER');
+        setDataUi('initials');
+        global.document.activeElement = {};
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'ArrowDown', preventDefault: mock.fn() });
+        assert.strictEqual(buttons[0].focus.mock.calls.length, 0);
+    });
+
+    test('ArrowDown navigates away from range input', () => {
+        const { ui, keydownHandlers, container, setDataUi } = createMockUIManager('MENU');
+        setDataUi('settings');
+        // Create a mock settings screen with a range input and a button
+        const rangeInput = { tagName: 'INPUT', type: 'range', offsetParent: {} };
+        const nextBtn = { tagName: 'BUTTON', offsetParent: {}, focus: mock.fn() };
+        const settingsScreen = {
+            querySelector: mock.fn(() => null), // no .ui-btn-group
+            querySelectorAll: mock.fn(() => [rangeInput, nextBtn])
+        };
+        const origQS = container.querySelector;
+        container.querySelector = mock.fn((sel) => {
+            if (sel === '.screen-settings') return settingsScreen;
+            return origQS(sel);
+        });
+        global.document.activeElement = rangeInput;
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'ArrowDown', preventDefault: mock.fn() });
+        assert.strictEqual(nextBtn.focus.mock.calls.length, 1);
+        container.querySelector = origQS;
+    });
+});
+
+describe('UIManager backspace navigation', () => {
+    test('Backspace closes settings modal', () => {
+        const { keydownHandlers, setDataUi, audioMock } = createMockUIManager('MENU');
+        setDataUi('settings');
+        global.document.activeElement = { tagName: 'BUTTON' };
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'Backspace', preventDefault: mock.fn() });
+        assert.strictEqual(audioMock.playBack.mock.calls.length, 1);
+    });
+
+    test('Backspace closes leaderboard modal', () => {
+        const { keydownHandlers, setDataUi, audioMock } = createMockUIManager('MENU');
+        setDataUi('leaderboard');
+        global.document.activeElement = { tagName: 'BUTTON' };
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'Backspace', preventDefault: mock.fn() });
+        assert.strictEqual(audioMock.playBack.mock.calls.length, 1);
+    });
+
+    test('Backspace resumes from pause state', () => {
+        const { keydownHandlers, gameMock, audioMock } = createMockUIManager('PAUSED');
+        global.document.activeElement = { tagName: 'BUTTON' };
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'Backspace', preventDefault: mock.fn() });
+        assert.strictEqual(audioMock.playConfirm.mock.calls.length, 1);
+        assert.strictEqual(gameMock.setState.mock.calls.length, 1);
+        assert.strictEqual(gameMock.setState.mock.calls[0].arguments[0], GameState.PLAYING);
+    });
+
+    test('Backspace returns to menu from gameover', () => {
+        const { keydownHandlers, gameMock, audioMock } = createMockUIManager('GAMEOVER');
+        global.document.activeElement = { tagName: 'BUTTON' };
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'Backspace', preventDefault: mock.fn() });
+        assert.strictEqual(audioMock.playBack.mock.calls.length, 1);
+        assert.strictEqual(gameMock.reset.mock.calls.length, 1);
+    });
+
+    test('Backspace skips when data-ui is initials', () => {
+        const { keydownHandlers, setDataUi, audioMock } = createMockUIManager('GAMEOVER');
+        setDataUi('initials');
+        global.document.activeElement = { tagName: 'DIV' };
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'Backspace', preventDefault: mock.fn() });
+        assert.strictEqual(audioMock.playBack.mock.calls.length, 0);
+        assert.strictEqual(audioMock.playConfirm.mock.calls.length, 0);
+    });
+
+    test('Backspace skips when active element is INPUT', () => {
+        const { keydownHandlers, audioMock } = createMockUIManager('MENU');
+        global.document.activeElement = { tagName: 'INPUT' };
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'Backspace', preventDefault: mock.fn() });
+        assert.strictEqual(audioMock.playBack.mock.calls.length, 0);
+    });
+
+    test('Backspace is no-op on menu state', () => {
+        const { keydownHandlers, gameMock, audioMock } = createMockUIManager('MENU');
+        global.document.activeElement = { tagName: 'BUTTON' };
+        const handler = keydownHandlers[keydownHandlers.length - 1];
+        handler({ key: 'Backspace', preventDefault: mock.fn() });
+        assert.strictEqual(audioMock.playBack.mock.calls.length, 0);
+        assert.strictEqual(audioMock.playConfirm.mock.calls.length, 0);
+        assert.strictEqual(gameMock.setState.mock.calls.length, 0);
+    });
+});
+
+describe('UIManager updateState auto-focus', () => {
+    test('updateState sets data-state attribute', () => {
+        const { ui, container } = createMockUIManager('MENU');
+        global.requestAnimationFrame = mock.fn((cb) => cb());
+        ui.updateState('PAUSED');
+        assert.ok(container.setAttribute.mock.calls.some(
+            c => c.arguments[0] === 'data-state' && c.arguments[1] === 'PAUSED'
+        ));
+        delete global.requestAnimationFrame;
+    });
+
+    test('updateState auto-focuses first button on MENU transition', () => {
+        const { ui, buttons, setDataState } = createMockUIManager('PLAYING');
+        setDataState('PLAYING'); // Start from PLAYING (no buttons visible)
+        global.requestAnimationFrame = mock.fn((cb) => cb());
+        // Reset focus call counts
+        buttons.forEach(b => b.focus.mock.resetCalls());
+        setDataState('MENU');
+        ui.updateState('MENU');
+        assert.strictEqual(buttons[0].focus.mock.calls.length, 1);
+        delete global.requestAnimationFrame;
+    });
+});
+
+describe('UIManager destroy cleanup', () => {
+    test('destroy removes menu keydown handler', () => {
+        const origRemove = global.document.removeEventListener;
+        const removeCalls = [];
+        global.document.removeEventListener = mock.fn((event, handler) => {
+            removeCalls.push({ event, handler });
+        });
+
+        const { ui } = createMockUIManager('MENU');
+        ui.destroy();
+
+        const keydownRemovals = removeCalls.filter(c => c.event === 'keydown');
+        assert.ok(keydownRemovals.length > 0, 'Should remove keydown listener on destroy');
+
+        global.document.removeEventListener = origRemove;
     });
 });

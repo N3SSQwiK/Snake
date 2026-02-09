@@ -2,12 +2,19 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Snake Game</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="game-container">
+    <!-- Skip link for keyboard users -->
+    <a href="#game-canvas" class="skip-link">Skip to game</a>
+
+    <!-- Screen reader announcements -->
+    <div id="sr-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+    <div id="sr-score" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
+    <div class="game-container" role="main">
         <!-- HUD (above canvas, visible during gameplay) -->
         <div class="game-hud" id="game-hud">
             <div class="hud-stat">
@@ -32,7 +39,7 @@
             </div>
         </div>
 
-        <canvas id="game-canvas"></canvas>
+        <canvas id="game-canvas" role="application" aria-label="Snake game - Use arrow keys or WASD to control the snake" tabindex="0"></canvas>
 
         <!-- UI Overlay — screens shown/hidden via data-state and data-ui attributes -->
         <div id="overlay" class="overlay">
@@ -78,14 +85,14 @@
             </div>
 
             <!-- Initials Entry (modal overlay) -->
-            <div class="screen-initials" role="dialog" aria-label="Enter initials">
+            <div class="screen-initials" role="dialog" aria-modal="true" aria-label="Enter initials">
                 <div class="ui-panel">
                     <h2 class="ui-heading">New High Score!</h2>
                     <p class="ui-score" id="initials-score">0</p>
                     <div class="initials-slots">
-                        <div class="initials-slot initials-slot--active" data-index="0">A</div>
-                        <div class="initials-slot" data-index="1">A</div>
-                        <div class="initials-slot" data-index="2">A</div>
+                        <div class="initials-slot initials-slot--active" data-index="0" tabindex="0" role="button" aria-label="First letter, A">A</div>
+                        <div class="initials-slot" data-index="1" tabindex="0" role="button" aria-label="Second letter, A">A</div>
+                        <div class="initials-slot" data-index="2" tabindex="0" role="button" aria-label="Third letter, A">A</div>
                         <input id="initials-mobile-input" type="text" autocomplete="off" autocapitalize="characters" maxlength="1" aria-label="Type letter" />
                     </div>
                     <p class="ui-label">Type or tap slots to enter, arrows to cycle</p>
@@ -97,7 +104,7 @@
             </div>
 
             <!-- Leaderboard (modal overlay) -->
-            <div class="screen-leaderboard" role="dialog" aria-label="High scores">
+            <div class="screen-leaderboard" role="dialog" aria-modal="true" aria-label="High scores">
                 <div class="ui-panel ui-panel--wide">
                     <button class="ui-panel__close" data-action="leaderboard-back" aria-label="Close leaderboard">&times;</button>
                     <h2 class="ui-heading">High Scores</h2>
@@ -106,7 +113,7 @@
             </div>
 
             <!-- Settings Screen (modal overlay) -->
-            <div class="screen-settings" role="dialog" aria-label="Settings">
+            <div class="screen-settings" role="dialog" aria-modal="true" aria-label="Settings">
                 <div class="ui-panel">
                     <button class="ui-panel__close" data-action="settings-back" aria-label="Close settings">&times;</button>
                     <h2 class="ui-heading">Settings</h2>
@@ -127,14 +134,6 @@
                             </button>
                         </div>
                     </div>
-                    <div class="ui-setting-row">
-                        <label class="ui-label" for="animation-style-toggle">Smooth Animation</label>
-                        <button class="ui-toggle" id="animation-style-toggle" role="switch" aria-checked="true" data-action="toggle-animation-style">
-                            <span class="ui-toggle__track">
-                                <span class="ui-toggle__thumb"></span>
-                            </span>
-                        </button>
-                    </div>
                     <div class="ui-setting-group">
                         <label class="ui-label">Sound</label>
                         <div class="ui-setting-row">
@@ -153,9 +152,101 @@
                             </button>
                         </div>
                     </div>
+                    <div class="ui-setting-group">
+                        <label class="ui-label">Accessibility</label>
+                        <div class="ui-setting-row">
+                            <label class="ui-label ui-label--small" for="reduce-motion-toggle">Reduce Motion</label>
+                            <button class="ui-toggle" id="reduce-motion-toggle" role="switch" aria-checked="false" data-action="toggle-reduce-motion">
+                                <span class="ui-toggle__track">
+                                    <span class="ui-toggle__thumb"></span>
+                                </span>
+                            </button>
+                        </div>
+                        <div class="ui-setting-row">
+                            <label class="ui-label ui-label--small" for="animation-style-toggle">Smooth Animation</label>
+                            <button class="ui-toggle" id="animation-style-toggle" role="switch" aria-checked="true" data-action="toggle-animation-style">
+                                <span class="ui-toggle__track">
+                                    <span class="ui-toggle__thumb"></span>
+                                </span>
+                            </button>
+                        </div>
+                        <p class="ui-setting-hint" id="animation-hint" hidden>Disabled by Reduce Motion</p>
+                        <div class="ui-setting-row">
+                            <label class="ui-label ui-label--small" for="colorblind-mode-toggle">Shape Outlines</label>
+                            <button class="ui-toggle" id="colorblind-mode-toggle" role="switch" aria-checked="false" data-action="toggle-colorblind-mode">
+                                <span class="ui-toggle__track">
+                                    <span class="ui-toggle__thumb"></span>
+                                </span>
+                            </button>
+                        </div>
+                        <div class="ui-setting-row">
+                            <label class="ui-label ui-label--small" for="accessibility-mode-toggle">Extended Time Mode</label>
+                            <button class="ui-toggle" id="accessibility-mode-toggle" role="switch" aria-checked="false" data-action="toggle-accessibility-mode">
+                                <span class="ui-toggle__track">
+                                    <span class="ui-toggle__thumb"></span>
+                                </span>
+                            </button>
+                        </div>
+                    </div>
                     <div class="theme-picker">
                         <label class="ui-label">Theme</label>
                         <div class="theme-picker__grid" id="theme-picker-grid"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Keyboard Shortcuts Help (modal overlay) -->
+            <div class="screen-shortcuts" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+                <div class="ui-panel">
+                    <button class="ui-panel__close" data-action="shortcuts-back" aria-label="Close keyboard shortcuts">&times;</button>
+                    <h2 class="ui-heading">Keyboard Shortcuts</h2>
+                    <div class="shortcuts-list">
+                        <div class="shortcuts-section">
+                            <h3 class="shortcuts-section__title">Gameplay</h3>
+                            <div class="shortcut-row">
+                                <span class="shortcut-keys"><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd></span>
+                                <span class="shortcut-desc">Move snake</span>
+                            </div>
+                            <div class="shortcut-row">
+                                <span class="shortcut-keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span>
+                                <span class="shortcut-desc">Move snake (alternate)</span>
+                            </div>
+                            <div class="shortcut-row">
+                                <span class="shortcut-keys"><kbd>Space</kbd> / <kbd>P</kbd></span>
+                                <span class="shortcut-desc">Pause / Resume</span>
+                            </div>
+                            <div class="shortcut-row">
+                                <span class="shortcut-keys"><kbd>Esc</kbd></span>
+                                <span class="shortcut-desc">Pause game / Close menu</span>
+                            </div>
+                        </div>
+                        <div class="shortcuts-section">
+                            <h3 class="shortcuts-section__title">Menus</h3>
+                            <div class="shortcut-row">
+                                <span class="shortcut-keys"><kbd>↑</kbd><kbd>↓</kbd></span>
+                                <span class="shortcut-desc">Cycle through buttons</span>
+                            </div>
+                            <div class="shortcut-row">
+                                <span class="shortcut-keys"><kbd>Enter</kbd> / <kbd>Space</kbd></span>
+                                <span class="shortcut-desc">Activate button</span>
+                            </div>
+                            <div class="shortcut-row">
+                                <span class="shortcut-keys"><kbd>Backspace</kbd></span>
+                                <span class="shortcut-desc">Go back / close modal</span>
+                            </div>
+                            <div class="shortcut-row">
+                                <span class="shortcut-keys"><kbd>Tab</kbd></span>
+                                <span class="shortcut-desc">Navigate to next element</span>
+                            </div>
+                            <div class="shortcut-row">
+                                <span class="shortcut-keys"><kbd>Shift</kbd>+<kbd>Tab</kbd></span>
+                                <span class="shortcut-desc">Navigate to previous element</span>
+                            </div>
+                            <div class="shortcut-row">
+                                <span class="shortcut-keys"><kbd>?</kbd></span>
+                                <span class="shortcut-desc">Show this help</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

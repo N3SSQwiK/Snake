@@ -1,20 +1,43 @@
 schema: spec-driven
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  Browser-based snake game with modern enhancements. Classic gameplay with
+  multiple themes, difficulty settings, mobile touch support, and local
+  leaderboards. See PRD.md for complete requirements.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+  Tech stack: HTML5 Canvas, Vanilla JavaScript (no build step), CSS with
+  custom properties for theming, localStorage for persistence, Node.js
+  native test runner for unit tests. No external frameworks.
+
+  Architecture: Single file (game.js), class-based design.
+  Classes: Game (controller/loop/state), Snake (movement/growth),
+  Food (spawning/types/timers), Renderer (canvas drawing/animations),
+  InputHandler (keyboard/touch/direction queue), AudioManager (Web Audio API),
+  StorageManager (settings/leaderboard), UIManager (screens/overlays).
+
+  Game loop: requestAnimationFrame at 60fps, fixed-timestep tick logic.
+  State machine: Menu -> Playing -> Paused -> Game Over.
+  Theme system: CSS variables for UI, JS objects for Canvas colors.
+  Grid: 25x25 cells, 20px cell size (500x500 canvas).
+
+  Conventions:
+  - Design before code: use /game-ui-design skill before visual components
+  - Avoid AI aesthetic traps: no neon #00ff00, no emoji icons, no rainbow gradients
+  - Constants at top of file, logic separated from rendering
+  - Tests in game.test.js using Node.js native test runner (node --test)
+  - Feature branches, conventional commits
+
+  Domain: Grid-based movement, direction queue (prevents 180-degree reversals),
+  food types (regular/bonus/toxic/lethal), collision modes (wall-death vs
+  wrap-around), animation modes (smooth interpolation vs classic grid-snap),
+  difficulty levels (easy/medium/hard), accessibility features (WCAG 2.1 AA).
+
+  Constraints: Browser-only (no server), 60fps on mid-range devices,
+  mobile-first responsive, all data stored locally.
+
+rules:
+  proposal:
+    - Include a Design Requirements section for any visual components
+    - Consider edge cases: rapid input, resource exhaustion, concurrent operations
+  tasks:
+    - Reference specific line numbers and methods when describing code changes
