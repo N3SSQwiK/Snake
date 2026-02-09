@@ -1399,6 +1399,427 @@ class InputHandler {
 }
 
 // =============================================================================
+// PREVIEW MANAGER CLASS
+// =============================================================================
+
+class PreviewManager {
+    constructor(theme) {
+        this.theme = theme;
+        this.previews = [];
+        this._rafId = null;
+        this._lastTime = 0;
+    }
+
+    // Register a preview object { canvas, ctx, update(dt), render(interp) }
+    addPreview(preview) {
+        this.previews.push(preview);
+    }
+
+    start() {
+        this._lastTime = performance.now();
+        const loop = (now) => {
+            this._rafId = requestAnimationFrame(loop);
+            const dt = now - this._lastTime;
+            this._lastTime = now;
+            for (const p of this.previews) {
+                p.update(dt);
+                p.render();
+            }
+        };
+        this._rafId = requestAnimationFrame(loop);
+    }
+
+    stop() {
+        if (this._rafId) {
+            cancelAnimationFrame(this._rafId);
+            this._rafId = null;
+        }
+        for (const p of this.previews) {
+            if (p.canvas && p.canvas.parentNode) {
+                p.canvas.parentNode.removeChild(p.canvas);
+            }
+        }
+        this.previews = [];
+    }
+}
+
+// A mini-snake that follows a fixed clockwise rectangular path on a small grid
+class PreviewSnake {
+    constructor(gridW, gridH, length, tickRate) {
+        this.gridW = gridW;
+        this.gridH = gridH;
+        this.length = length;
+        this.tickRate = tickRate; // ticks per second
+        this.tickInterval = 1000 / tickRate;
+        this.tickAccum = 0;
+
+        // Build the full clockwise rectangular path
+        this.path = [];
+        // Top edge: left to right
+        for (let x = 0; x < gridW; x++) this.path.push({ x, y: 0 });
+        // Right edge: top to bottom
+        for (let y = 1; y < gridH; y++) this.path.push({ x: gridW - 1, y });
+        // Bottom edge: right to left
+        for (let x = gridW - 2; x >= 0; x--) this.path.push({ x, y: gridH - 1 });
+        // Left edge: bottom to top
+        for (let y = gridH - 2; y > 0; y--) this.path.push({ x: 0, y });
+
+        this.pathIndex = 0;
+        this.segments = [];
+        // Initialize snake segments along the path (backwards from start)
+        for (let i = 0; i < length; i++) {
+            const idx = (this.path.length - i) % this.path.length;
+            this.segments.unshift({ ...this.path[idx] });
+        }
+
+        // For interpolation
+        this.prevSegments = this.segments.map(s => ({ ...s }));
+        this.interpT = 1;
+    }
+
+    update(dt) {
+        this.tickAccum += dt;
+        if (this.tickAccum >= this.tickInterval) {
+            this.tickAccum -= this.tickInterval;
+            this.prevSegments = this.segments.map(s => ({ ...s }));
+            this.interpT = 0;
+
+            // Advance head
+            this.pathIndex = (this.pathIndex + 1) % this.path.length;
+            const newHead = { ...this.path[this.pathIndex] };
+            this.segments.push(newHead);
+            this.segments.shift();
+        } else {
+            this.interpT = Math.min(1, this.tickAccum / this.tickInterval);
+        }
+    }
+
+    getSegments(interpolate) {
+        if (!interpolate || this.interpT >= 1) return this.segments;
+        const t = this.interpT;
+        return this.segments.map((seg, i) => {
+            const prev = this.prevSegments[i] || seg;
+            return {
+                x: prev.x + (seg.x - prev.x) * t,
+                y: prev.y + (seg.y - prev.y) * t
+            };
+        });
+    }
+
+    reset() {
+        this.pathIndex = 0;
+        this.tickAccum = 0;
+        this.interpT = 1;
+        this.segments = [];
+        for (let i = 0; i < this.length; i++) {
+            const idx = (this.path.length - i) % this.path.length;
+            this.segments.unshift({ ...this.path[idx] });
+        }
+        this.prevSegments = this.segments.map(s => ({ ...s }));
+    }
+}
+
+// Preview factory: Difficulty (single canvas showing key feature of each difficulty)
+// Easy: snake wrapping through walls | Medium: snake + toxic food | Hard: snake + toxic + lethal food
+function createDifficultyPreview(theme, difficulty) {
+    const gridW = 8, gridH = 4, cellSize = 14;
+    const canvas = document.createElement('canvas');
+    canvas.width = gridW * cellSize;
+    canvas.height = gridH * cellSize;
+    canvas.className = 'preview-canvas';
+    canvas.setAttribute('aria-hidden', 'true');
+    const ctx = canvas.getContext('2d');
+
+    const snake = new PreviewSnake(gridW, gridH, 4, 5);
+    // Static food positions for medium/hard previews
+    const toxicPos = { x: 5, y: 1 };
+    const lethalPos = { x: 2, y: 2 };
+
+    function drawGrid(colors) {
+        ctx.fillStyle = colors.background;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = colors.grid;
+        ctx.lineWidth = 0.5;
+        ctx.globalAlpha = 0.3;
+        for (let x = 0; x <= gridW; x++) {
+            ctx.beginPath();
+            ctx.moveTo(x * cellSize, 0);
+            ctx.lineTo(x * cellSize, canvas.height);
+            ctx.stroke();
+        }
+        for (let y = 0; y <= gridH; y++) {
+            ctx.beginPath();
+            ctx.moveTo(0, y * cellSize);
+            ctx.lineTo(canvas.width, y * cellSize);
+            ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+    }
+
+    function drawSnake(colors, segs) {
+        const pad = 1;
+        for (let i = 0; i < segs.length; i++) {
+            const s = segs[i];
+            const isHead = i === segs.length - 1;
+            ctx.fillStyle = isHead ? colors.snakeHead : colors.snakeTail;
+            ctx.fillRect(
+                s.x * cellSize + pad, s.y * cellSize + pad,
+                cellSize - pad * 2, cellSize - pad * 2
+            );
+        }
+    }
+
+    // Toxic food: diamond shape with exclamation mark
+    function drawToxicFood(colors, pos) {
+        const cx = pos.x * cellSize + cellSize / 2;
+        const cy = pos.y * cellSize + cellSize / 2;
+        const r = cellSize / 2 - 2;
+        ctx.fillStyle = colors.poisonFood;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - r);
+        ctx.lineTo(cx + r, cy);
+        ctx.lineTo(cx, cy + r);
+        ctx.lineTo(cx - r, cy);
+        ctx.closePath();
+        ctx.fill();
+        // Exclamation mark
+        ctx.fillStyle = colors.background;
+        ctx.fillRect(cx - 1, cy - 4, 2, 5);
+        ctx.beginPath();
+        ctx.arc(cx, cy + 3, 1, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    // Lethal food: spiky circle with skull
+    function drawLethalFood(colors, pos) {
+        const cx = pos.x * cellSize + cellSize / 2;
+        const cy = pos.y * cellSize + cellSize / 2;
+        const outerR = cellSize / 2 - 1;
+        const innerR = outerR * 0.65;
+        ctx.fillStyle = colors.poisonFood;
+        ctx.beginPath();
+        for (let i = 0; i < 16; i++) {
+            const angle = (Math.PI / 8) * i - Math.PI / 2;
+            const r = i % 2 === 0 ? outerR : innerR;
+            const px = cx + Math.cos(angle) * r;
+            const py = cy + Math.sin(angle) * r;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+        // X eyes
+        ctx.strokeStyle = colors.background;
+        ctx.lineWidth = 1;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(cx - 3, cy - 2); ctx.lineTo(cx - 1, cy);
+        ctx.moveTo(cx - 1, cy - 2); ctx.lineTo(cx - 3, cy);
+        ctx.moveTo(cx + 1, cy - 2); ctx.lineTo(cx + 3, cy);
+        ctx.moveTo(cx + 3, cy - 2); ctx.lineTo(cx + 1, cy);
+        ctx.stroke();
+    }
+
+    // Wall wrap indicator: arrows showing pass-through
+    function drawWrapIndicators(colors) {
+        ctx.strokeStyle = colors.grid;
+        ctx.globalAlpha = 0.5;
+        ctx.lineWidth = 1.5;
+        ctx.lineCap = 'round';
+        // Right edge arrow
+        const midY = canvas.height / 2;
+        const rX = canvas.width - 3;
+        ctx.beginPath();
+        ctx.moveTo(rX - 4, midY - 4);
+        ctx.lineTo(rX, midY);
+        ctx.lineTo(rX - 4, midY + 4);
+        ctx.stroke();
+        // Left edge arrow
+        const lX = 3;
+        ctx.beginPath();
+        ctx.moveTo(lX + 4, midY - 4);
+        ctx.lineTo(lX, midY);
+        ctx.lineTo(lX + 4, midY + 4);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+    }
+
+    const preview = {
+        canvas,
+        difficulty,
+        setDifficulty(d) {
+            this.difficulty = d;
+            snake.reset();
+        },
+        update(dt) {
+            snake.update(dt);
+        },
+        render() {
+            const colors = theme.colors;
+            drawGrid(colors);
+            drawSnake(colors, snake.getSegments(false));
+
+            if (this.difficulty === 'easy') {
+                drawWrapIndicators(colors);
+            } else if (this.difficulty === 'medium') {
+                drawToxicFood(colors, toxicPos);
+            } else {
+                drawToxicFood(colors, toxicPos);
+                drawLethalFood(colors, lethalPos);
+            }
+        }
+    };
+    return preview;
+}
+
+// Preview factory: Smooth Animation (side-by-side)
+function createSmoothAnimationPreview(theme) {
+    const gridW = 6, gridH = 3, cellSize = 12;
+    const canvasW = gridW * cellSize, canvasH = gridH * cellSize;
+    const container = document.createElement('div');
+    container.className = 'preview-smooth-container';
+
+    const smoothCanvas = document.createElement('canvas');
+    smoothCanvas.width = canvasW;
+    smoothCanvas.height = canvasH;
+    smoothCanvas.className = 'preview-canvas';
+    smoothCanvas.setAttribute('aria-hidden', 'true');
+
+    const classicCanvas = document.createElement('canvas');
+    classicCanvas.width = canvasW;
+    classicCanvas.height = canvasH;
+    classicCanvas.className = 'preview-canvas';
+    classicCanvas.setAttribute('aria-hidden', 'true');
+
+    const smoothLabel = document.createElement('span');
+    smoothLabel.className = 'preview-label';
+    smoothLabel.textContent = 'Smooth';
+    const classicLabel = document.createElement('span');
+    classicLabel.className = 'preview-label';
+    classicLabel.textContent = 'Classic';
+
+    const leftCol = document.createElement('div');
+    leftCol.className = 'preview-col';
+    leftCol.appendChild(smoothCanvas);
+    leftCol.appendChild(smoothLabel);
+
+    const rightCol = document.createElement('div');
+    rightCol.className = 'preview-col';
+    rightCol.appendChild(classicCanvas);
+    rightCol.appendChild(classicLabel);
+
+    container.appendChild(leftCol);
+    container.appendChild(rightCol);
+
+    const smoothSnake = new PreviewSnake(gridW, gridH, 3, 5);
+    const classicSnake = new PreviewSnake(gridW, gridH, 3, 5);
+    const smoothCtx = smoothCanvas.getContext('2d');
+    const classicCtx = classicCanvas.getContext('2d');
+
+    function renderSnake(ctx, segs, w, h) {
+        const colors = theme.colors;
+        ctx.fillStyle = colors.background;
+        ctx.fillRect(0, 0, w, h);
+        ctx.strokeStyle = colors.grid;
+        ctx.lineWidth = 0.5;
+        ctx.globalAlpha = 0.3;
+        for (let x = 0; x <= gridW; x++) {
+            ctx.beginPath();
+            ctx.moveTo(x * cellSize, 0);
+            ctx.lineTo(x * cellSize, h);
+            ctx.stroke();
+        }
+        for (let y = 0; y <= gridH; y++) {
+            ctx.beginPath();
+            ctx.moveTo(0, y * cellSize);
+            ctx.lineTo(w, y * cellSize);
+            ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+        const pad = 1;
+        for (let i = 0; i < segs.length; i++) {
+            const s = segs[i];
+            const isHead = i === segs.length - 1;
+            ctx.fillStyle = isHead ? colors.snakeHead : colors.snakeTail;
+            ctx.fillRect(
+                s.x * cellSize + pad,
+                s.y * cellSize + pad,
+                cellSize - pad * 2,
+                cellSize - pad * 2
+            );
+        }
+    }
+
+    const preview = {
+        canvas: container, // container used for DOM removal
+        update(dt) {
+            smoothSnake.update(dt);
+            classicSnake.update(dt);
+        },
+        render() {
+            renderSnake(smoothCtx, smoothSnake.getSegments(true), canvasW, canvasH);
+            renderSnake(classicCtx, classicSnake.getSegments(false), canvasW, canvasH);
+        }
+    };
+    return preview;
+}
+
+// Preview factory: Theme swatch (mini snake on theme background)
+function createSwatchPreview(themeObj) {
+    const gridW = 5, gridH = 3, cellSize = 8;
+    const canvas = document.createElement('canvas');
+    canvas.width = gridW * cellSize;
+    canvas.height = gridH * cellSize;
+    canvas.className = 'preview-canvas preview-swatch-canvas';
+    canvas.setAttribute('aria-hidden', 'true');
+    const ctx = canvas.getContext('2d');
+
+    const snake = new PreviewSnake(gridW, gridH, 3, 4);
+
+    const preview = {
+        canvas,
+        update(dt) {
+            snake.update(dt);
+        },
+        render() {
+            const colors = themeObj.colors;
+            ctx.fillStyle = colors.background;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.strokeStyle = colors.grid;
+            ctx.lineWidth = 0.5;
+            ctx.globalAlpha = 0.25;
+            for (let x = 0; x <= gridW; x++) {
+                ctx.beginPath();
+                ctx.moveTo(x * cellSize, 0);
+                ctx.lineTo(x * cellSize, canvas.height);
+                ctx.stroke();
+            }
+            for (let y = 0; y <= gridH; y++) {
+                ctx.beginPath();
+                ctx.moveTo(0, y * cellSize);
+                ctx.lineTo(canvas.width, y * cellSize);
+                ctx.stroke();
+            }
+            ctx.globalAlpha = 1;
+            const segs = snake.getSegments(false);
+            const pad = 1;
+            for (let i = 0; i < segs.length; i++) {
+                const s = segs[i];
+                const isHead = i === segs.length - 1;
+                ctx.fillStyle = isHead ? colors.snakeHead : colors.snakeTail;
+                ctx.fillRect(
+                    s.x * cellSize + pad,
+                    s.y * cellSize + pad,
+                    cellSize - pad * 2,
+                    cellSize - pad * 2
+                );
+            }
+        }
+    };
+    return preview;
+}
+
+// =============================================================================
 // UI MANAGER CLASS
 // =============================================================================
 
@@ -1426,6 +1847,9 @@ class UIManager {
         this.colorblindModeToggle = document.getElementById('colorblind-mode-toggle');
         this.accessibilityModeToggle = document.getElementById('accessibility-mode-toggle');
         this.animationHint = document.getElementById('animation-hint');
+        this._previewManager = null;
+        this._difficultyPreview = null;
+        this._smoothPreview = null;
 
         // Initials entry state
         this._initialsChars = [0, 0, 0]; // A=0, B=1, ... Z=25
@@ -1726,6 +2150,8 @@ class UIManager {
         this.syncDifficultySelector();
         this.syncAudioControls();
 
+        // Start preview animations before renderThemePicker so swatches can register
+        this._startPreviews();
         this.renderThemePicker();
         this.container.setAttribute('data-ui', 'settings');
 
@@ -1743,9 +2169,56 @@ class UIManager {
         this._trapFocus('.screen-settings');
     }
 
+    _startPreviews() {
+        this._stopPreviews();
+        const theme = THEMES[this.game.currentTheme] || THEMES.classic;
+        this._previewManager = new PreviewManager(theme);
+
+        // Difficulty preview
+        this._difficultyPreview = createDifficultyPreview(theme, this.game.difficulty);
+        const diffGroup = this.difficultySelector?.closest('.ui-setting-group');
+        if (diffGroup) {
+            diffGroup.appendChild(this._difficultyPreview.canvas);
+        }
+        this._previewManager.addPreview(this._difficultyPreview);
+
+        // Smooth Animation preview (hidden if reduce motion is on)
+        this._smoothPreview = createSmoothAnimationPreview(theme);
+        const animRow = this.animationToggle?.closest('.ui-setting-row');
+        const hint = this.animationHint;
+        const insertAfter = hint || animRow;
+        if (insertAfter && insertAfter.parentNode) {
+            insertAfter.parentNode.insertBefore(
+                this._smoothPreview.canvas, insertAfter.nextSibling
+            );
+        }
+        if (this.game.reducedMotion) {
+            this._smoothPreview.canvas.hidden = true;
+        }
+        this._previewManager.addPreview(this._smoothPreview);
+
+        this._previewManager.start();
+    }
+
+    _stopPreviews() {
+        if (this._previewManager) {
+            this._previewManager.stop();
+            this._previewManager = null;
+        }
+        this._difficultyPreview = null;
+        this._smoothPreview = null;
+    }
+
     renderThemePicker() {
         const grid = document.getElementById('theme-picker-grid');
         if (!grid) return;
+
+        // Remove old swatch previews from manager
+        if (this._previewManager) {
+            this._previewManager.previews = this._previewManager.previews.filter(
+                p => !p._isSwatch
+            );
+        }
         grid.replaceChildren();
 
         const unlocked = this.game.storage.getUnlockedThemes();
@@ -1762,25 +2235,21 @@ class UIManager {
             swatch.setAttribute('aria-label', theme.name + (isUnlocked ? '' : ' (locked)'));
             swatch.dataset.theme = key;
 
-            // Color preview squares
-            const preview = document.createElement('div');
-            preview.className = 'theme-swatch__preview';
-            preview.style.backgroundColor = theme.colors.background;
-
-            const snakeDot = document.createElement('span');
-            snakeDot.className = 'theme-swatch__dot';
-            snakeDot.style.backgroundColor = theme.colors.snake;
-            const foodDot = document.createElement('span');
-            foodDot.className = 'theme-swatch__dot';
-            foodDot.style.backgroundColor = theme.colors.food;
-            preview.appendChild(snakeDot);
-            preview.appendChild(foodDot);
+            // Animated swatch preview canvas
+            const swatchPreview = createSwatchPreview(theme);
+            swatchPreview._isSwatch = true;
+            const previewContainer = document.createElement('div');
+            previewContainer.className = 'theme-swatch__preview';
+            previewContainer.appendChild(swatchPreview.canvas);
+            if (this._previewManager) {
+                this._previewManager.addPreview(swatchPreview);
+            }
 
             const name = document.createElement('span');
             name.className = 'theme-swatch__name';
             name.textContent = theme.name;
 
-            swatch.appendChild(preview);
+            swatch.appendChild(previewContainer);
             swatch.appendChild(name);
 
             if (!isUnlocked) {
@@ -1806,6 +2275,7 @@ class UIManager {
                 if (!isUnlocked) return;
                 this.game.applyTheme(key);
                 this.game.audio.playConfirm();
+                this._startPreviews();
                 this.renderThemePicker();
             });
 
@@ -1831,6 +2301,7 @@ class UIManager {
     }
 
     hideSettings() {
+        this._stopPreviews();
         this._releaseFocus();
         this.container.removeAttribute('data-ui');
     }
@@ -2181,6 +2652,10 @@ class UIManager {
             this.game.setDifficulty(diffOption.dataset.difficulty);
             this.syncDifficultySelector();
             this.game.audio.playConfirm();
+            // Update difficulty preview
+            if (this._difficultyPreview) {
+                this._difficultyPreview.setDifficulty(diffOption.dataset.difficulty);
+            }
             return;
         }
 
@@ -2247,6 +2722,10 @@ class UIManager {
                 }
                 if (this.animationHint) {
                     this.animationHint.hidden = !newReducedMotion;
+                }
+                // Show/hide Smooth Animation preview
+                if (this._smoothPreview) {
+                    this._smoothPreview.canvas.hidden = newReducedMotion;
                 }
                 break;
             }
