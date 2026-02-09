@@ -2886,7 +2886,7 @@ if (typeof document !== 'undefined') {
                 return; // Handled by its own keydown listener
             }
 
-            if (game.state === GameState.PLAYING || game.state === GameState.PAUSED || game.state === GameState.GAMEOVER) {
+            if (game.state === GameState.PAUSED || game.state === GameState.GAMEOVER) {
                 game.reset();
                 game.setState(GameState.MENU);
             }
