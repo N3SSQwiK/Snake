@@ -45,8 +45,13 @@ The system SHALL provide tap-zone input where tapping canvas quadrants maps to d
 The system SHALL allow the player to choose between swipe, D-pad, and tap-zone input methods.
 
 #### Scenario: Input method setting
+- **WHEN** the player opens settings on a coarse-pointer device
+- **THEN** a "Controls" setting group is visible with the current mobile input method displayed as a segmented selector: Swipe, D-Pad, Tap Zones
+
+#### Scenario: Input method hidden on desktop
+- **GIVEN** the device has a fine pointer
 - **WHEN** the player opens settings
-- **THEN** the current mobile input method is displayed with options: swipe, D-pad, tap-zone
+- **THEN** the "Controls" setting group is not visible
 
 #### Scenario: Input method persistence
 - **GIVEN** the player selects a mobile input method
@@ -87,7 +92,7 @@ The system SHALL accept input from gamepads using the standard Gamepad API, supp
 #### Scenario: Circle button back
 - **GIVEN** a gamepad is connected and a non-menu screen is displayed
 - **WHEN** the player presses Circle (O)
-- **THEN** the back or cancel action is triggered
+- **THEN** the same back action as Backspace is triggered (via UIManager.navigateBack())
 
 #### Scenario: Options button pause
 - **GIVEN** a gamepad is connected and the game is in PLAYING or PAUSED state
@@ -102,4 +107,19 @@ The system SHALL accept input from gamepads using the standard Gamepad API, supp
 #### Scenario: Gamepad menu navigation
 - **GIVEN** a gamepad is connected and a menu is displayed
 - **WHEN** the player presses D-pad up or down
-- **THEN** focus moves between menu buttons
+- **THEN** focus moves between menu buttons (via UIManager.navigateMenu()) with playNavigate() audio feedback
+
+#### Scenario: Gamepad audio feedback
+- **GIVEN** a gamepad is connected and a menu is displayed
+- **WHEN** the player presses Cross to confirm or Circle to go back
+- **THEN** the same audio feedback plays as keyboard navigation (playConfirm/playBack)
+
+#### Scenario: Gamepad respects input gate
+- **GIVEN** a gamepad is connected and a modal overlay is open (settings, leaderboard, shortcuts)
+- **WHEN** the player presses a D-pad direction
+- **THEN** direction input is blocked (inputGate returns true) but menu navigation buttons (Cross, Circle) still function
+
+#### Scenario: Gamepad ignored when no standard mapping
+- **GIVEN** a gamepad is connected with mapping !== "standard"
+- **WHEN** the system polls for gamepad input
+- **THEN** the gamepad is ignored

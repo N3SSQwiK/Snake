@@ -41,6 +41,22 @@
 
         <canvas id="game-canvas" role="application" aria-label="Snake game - Use arrow keys or WASD to control the snake" tabindex="0"></canvas>
 
+        <!-- Virtual D-Pad (mobile only, visible during PLAYING when D-pad mode selected) -->
+        <div class="dpad" id="dpad" hidden aria-label="Directional pad">
+            <button class="dpad__btn dpad__btn--up" data-dir="up" aria-label="Move up">
+                <svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 8l-6 6h12z" fill="currentColor"/></svg>
+            </button>
+            <button class="dpad__btn dpad__btn--left" data-dir="left" aria-label="Move left">
+                <svg viewBox="0 0 24 24" width="20" height="20"><path d="M8 12l6-6v12z" fill="currentColor"/></svg>
+            </button>
+            <button class="dpad__btn dpad__btn--right" data-dir="right" aria-label="Move right">
+                <svg viewBox="0 0 24 24" width="20" height="20"><path d="M16 12l-6-6v12z" fill="currentColor"/></svg>
+            </button>
+            <button class="dpad__btn dpad__btn--down" data-dir="down" aria-label="Move down">
+                <svg viewBox="0 0 24 24" width="20" height="20"><path d="M12 16l6-6H6z" fill="currentColor"/></svg>
+            </button>
+        </div>
+
         <!-- UI Overlay — screens shown/hidden via data-state and data-ui attributes -->
         <div id="overlay" class="overlay">
 
@@ -149,6 +165,23 @@
                                 <span class="ui-toggle__track">
                                     <span class="ui-toggle__thumb"></span>
                                 </span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="ui-setting-group ui-setting-group--touch-only" id="controls-group">
+                        <label class="ui-label">Controls</label>
+                        <div class="ui-segmented" id="mobile-input-selector" role="radiogroup" aria-label="Mobile input method">
+                            <button class="ui-segmented__option" data-input="swipe" role="radio" aria-checked="true">
+                                <span class="ui-segmented__label">Swipe</span>
+                                <span class="ui-segmented__desc">Swipe to change direction</span>
+                            </button>
+                            <button class="ui-segmented__option" data-input="dpad" role="radio" aria-checked="false">
+                                <span class="ui-segmented__label">D-Pad</span>
+                                <span class="ui-segmented__desc">On-screen directional buttons</span>
+                            </button>
+                            <button class="ui-segmented__option" data-input="tapzone" role="radio" aria-checked="false">
+                                <span class="ui-segmented__label">Tap Zones</span>
+                                <span class="ui-segmented__desc">Tap canvas quadrants</span>
                             </button>
                         </div>
                     </div>

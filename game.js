@@ -1245,15 +1245,26 @@ class InputHandler {
         // Optional gate: when set and returns true, all input is suppressed
         this.inputGate = null;
 
+        // Mobile input method: 'swipe' | 'dpad' | 'tapzone'
+        this.mobileInputMethod = 'swipe';
+
         // Touch tracking
         this.touchStartX = null;
         this.touchStartY = null;
         this.minSwipeDistance = 30;
 
+        // Gamepad state
+        this.gamepadIndex = null;
+        this.prevButtonStates = [];
+        this.uiManager = null;
+        this.getGameState = null;
+
         // Bind event handlers
         this.handleKeyDown = this.handleKeyDown.bind(this);
         this.handleTouchStart = this.handleTouchStart.bind(this);
         this.handleTouchEnd = this.handleTouchEnd.bind(this);
+        this._onGamepadConnected = this._onGamepadConnected.bind(this);
+        this._onGamepadDisconnected = this._onGamepadDisconnected.bind(this);
 
         // Attach listeners
         this.attachListeners();
@@ -1265,6 +1276,10 @@ class InputHandler {
         }
         this.canvas.addEventListener('touchstart', this.handleTouchStart, { passive: false });
         this.canvas.addEventListener('touchend', this.handleTouchEnd, { passive: false });
+        if (typeof window !== 'undefined') {
+            window.addEventListener('gamepadconnected', this._onGamepadConnected);
+            window.addEventListener('gamepaddisconnected', this._onGamepadDisconnected);
+        }
     }
 
     detachListeners() {
@@ -1273,6 +1288,24 @@ class InputHandler {
         }
         this.canvas.removeEventListener('touchstart', this.handleTouchStart);
         this.canvas.removeEventListener('touchend', this.handleTouchEnd);
+        if (typeof window !== 'undefined') {
+            window.removeEventListener('gamepadconnected', this._onGamepadConnected);
+            window.removeEventListener('gamepaddisconnected', this._onGamepadDisconnected);
+        }
+    }
+
+    _onGamepadConnected(e) {
+        if (e.gamepad.mapping === 'standard') {
+            this.gamepadIndex = e.gamepad.index;
+            this.prevButtonStates = new Array(e.gamepad.buttons.length).fill(false);
+        }
+    }
+
+    _onGamepadDisconnected(e) {
+        if (e.gamepad.index === this.gamepadIndex) {
+            this.gamepadIndex = null;
+            this.prevButtonStates = [];
+        }
     }
 
     onAction(actionName, callback) {
@@ -1333,6 +1366,13 @@ class InputHandler {
             return;
         }
 
+        // Block all touch input when gate is active (e.g., modal overlay open)
+        if (this.inputGate && this.inputGate()) {
+            this.touchStartX = null;
+            this.touchStartY = null;
+            return;
+        }
+
         const touch = event.changedTouches[0];
         const deltaX = touch.clientX - this.touchStartX;
         const deltaY = touch.clientY - this.touchStartY;
@@ -1341,8 +1381,26 @@ class InputHandler {
         this.touchStartX = null;
         this.touchStartY = null;
 
-        // Check minimum swipe distance
         const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+        // Tap-zone mode: short/zero distance touch maps position relative to canvas center
+        if (this.mobileInputMethod === 'tapzone' && distance < this.minSwipeDistance) {
+            const rect = this.canvas.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            const tapDx = touch.clientX - centerX;
+            const tapDy = touch.clientY - centerY;
+            let direction;
+            if (Math.abs(tapDx) > Math.abs(tapDy)) {
+                direction = tapDx > 0 ? Direction.RIGHT : Direction.LEFT;
+            } else {
+                direction = tapDy > 0 ? Direction.DOWN : Direction.UP;
+            }
+            this.queueDirection(direction);
+            return;
+        }
+
+        // Swipe mode: require minimum distance
         if (distance < this.minSwipeDistance) {
             return;
         }
@@ -1356,6 +1414,74 @@ class InputHandler {
         }
 
         this.queueDirection(direction);
+    }
+
+    pollGamepad() {
+        if (this.gamepadIndex === null) return;
+        const gamepads = navigator.getGamepads();
+        const gp = gamepads[this.gamepadIndex];
+        if (!gp || gp.mapping !== 'standard') return;
+
+        const buttons = gp.buttons;
+        const pressed = (i) => i < buttons.length && buttons[i].pressed;
+        const justPressed = (i) => {
+            const isPressed = pressed(i);
+            const wasPressed = this.prevButtonStates[i] || false;
+            return isPressed && !wasPressed;
+        };
+
+        const gameState = this.getGameState ? this.getGameState() : null;
+        const isPlaying = gameState === GameState.PLAYING;
+
+        // D-pad directions (buttons 12-15)
+        if (isPlaying) {
+            // During gameplay: D-pad queues directions (respect inputGate)
+            if (!(this.inputGate && this.inputGate())) {
+                const dpadMap = { 12: Direction.UP, 13: Direction.DOWN, 14: Direction.LEFT, 15: Direction.RIGHT };
+                for (const [btnIdx, dir] of Object.entries(dpadMap)) {
+                    if (justPressed(Number(btnIdx))) {
+                        this.queueDirection(dir);
+                    }
+                }
+            }
+        } else {
+            // During menus: D-pad navigates focus
+            if (this.uiManager) {
+                if (justPressed(12)) this.uiManager.navigateMenu('up');
+                if (justPressed(13)) this.uiManager.navigateMenu('down');
+            }
+        }
+
+        // Cross (button 0): pause during gameplay, confirm in menus
+        if (justPressed(0)) {
+            if (isPlaying) {
+                if (this.actionCallbacks.pause) this.actionCallbacks.pause();
+            } else if (this.uiManager) {
+                const navBtns = this.uiManager._getNavigableButtons();
+                if (navBtns.length > 0 && !navBtns.includes(document.activeElement)) {
+                    navBtns[0].focus();
+                }
+                if (document.activeElement && typeof document.activeElement.click === 'function') {
+                    document.activeElement.click();
+                }
+            }
+        }
+
+        // Circle (button 1): back/cancel
+        if (justPressed(1)) {
+            if (this.uiManager) this.uiManager.navigateBack();
+        }
+
+        // Options (button 9): pause toggle
+        if (justPressed(9)) {
+            if (this.actionCallbacks.pause) this.actionCallbacks.pause();
+        }
+
+        // Update previous button states
+        for (let i = 0; i < buttons.length; i++) {
+            this.prevButtonStates[i] = buttons[i].pressed;
+        }
+        this.prevButtonStates.length = buttons.length;
     }
 
     queueDirection(newDirection) {
@@ -1936,6 +2062,54 @@ class UIManager {
         return this._getFocusableElements(screen);
     }
 
+    navigateMenu(direction) {
+        const buttons = this._getNavigableButtons();
+        if (buttons.length === 0) return;
+        const currentIndex = buttons.indexOf(document.activeElement);
+        let nextIndex;
+        if (direction === 'down') {
+            nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % buttons.length;
+        } else {
+            nextIndex = currentIndex < 0 ? buttons.length - 1 : (currentIndex - 1 + buttons.length) % buttons.length;
+        }
+        buttons[nextIndex].focus();
+        this.game.audio.init();
+        this.game.audio.playNavigate();
+    }
+
+    navigateBack() {
+        const dataUi = this.container.getAttribute('data-ui');
+        if (dataUi === 'shortcuts') {
+            this.hideShortcuts();
+            return;
+        }
+        if (dataUi === 'leaderboard') {
+            this.game.audio.playBack();
+            this.hideLeaderboard();
+            return;
+        }
+        if (dataUi === 'settings') {
+            this.game.audio.playBack();
+            this.hideSettings();
+            return;
+        }
+
+        // No modal open — act on game state
+        const state = this.game.state;
+        if (state === GameState.PAUSED) {
+            this.game.audio.playConfirm();
+            this.game.setState(GameState.PLAYING);
+            return;
+        }
+        if (state === GameState.GAMEOVER) {
+            this.game.audio.playBack();
+            this.game.reset();
+            this.game.setState(GameState.MENU);
+            return;
+        }
+        // MENU / PLAYING: no-op
+    }
+
     _handleMenuKeyDown(e) {
         const dataUi = this.container.getAttribute('data-ui');
 
@@ -1943,21 +2117,8 @@ class UIManager {
         if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
             // Skip when initials modal is open (has its own arrow handler)
             if (dataUi === 'initials') return;
-
-            const buttons = this._getNavigableButtons();
-            if (buttons.length === 0) return;
-
             e.preventDefault();
-            const currentIndex = buttons.indexOf(document.activeElement);
-            let nextIndex;
-            if (e.key === 'ArrowDown') {
-                nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % buttons.length;
-            } else {
-                nextIndex = currentIndex < 0 ? buttons.length - 1 : (currentIndex - 1 + buttons.length) % buttons.length;
-            }
-            buttons[nextIndex].focus();
-            this.game.audio.init();
-            this.game.audio.playNavigate();
+            this.navigateMenu(e.key === 'ArrowDown' ? 'down' : 'up');
             return;
         }
 
@@ -1967,38 +2128,8 @@ class UIManager {
             if (dataUi === 'initials') return;
             const tag = document.activeElement ? document.activeElement.tagName : '';
             if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-
             e.preventDefault();
-
-            if (dataUi === 'shortcuts') {
-                this.hideShortcuts();
-                return;
-            }
-            if (dataUi === 'leaderboard') {
-                this.game.audio.playBack();
-                this.hideLeaderboard();
-                return;
-            }
-            if (dataUi === 'settings') {
-                this.game.audio.playBack();
-                this.hideSettings();
-                return;
-            }
-
-            // No modal open — act on game state
-            const state = this.game.state;
-            if (state === GameState.PAUSED) {
-                this.game.audio.playConfirm();
-                this.game.setState(GameState.PLAYING);
-                return;
-            }
-            if (state === GameState.GAMEOVER) {
-                this.game.audio.playBack();
-                this.game.reset();
-                this.game.setState(GameState.MENU);
-                return;
-            }
-            // MENU / PLAYING: no-op
+            this.navigateBack();
         }
     }
 
@@ -3031,6 +3162,9 @@ class Game {
         const deltaTime = currentTime - this.lastTime;
         this.lastTime = currentTime;
 
+        // Poll gamepad every frame (before tick so directions are queued in time)
+        this.inputHandler.pollGamepad();
+
         // Accumulate time for fixed-step game logic
         // Cap delta to avoid spiral of death after tab-away or GC pause
         this.tickAccumulator += Math.min(deltaTime, this.tickInterval);
@@ -3337,6 +3471,10 @@ if (typeof document !== 'undefined') {
         // Block all input while settings modal is open
         game.inputHandler.inputGate = () => container.hasAttribute('data-ui');
 
+        // Wire gamepad context so pollGamepad() knows game state and can navigate menus
+        game.inputHandler.getGameState = () => game.state;
+        game.inputHandler.uiManager = game.ui;
+
         // Wire action keys
         game.inputHandler.onAction('pause', () => {
             if (game.state === GameState.PLAYING) {
@@ -3392,6 +3530,59 @@ if (typeof document !== 'undefined') {
                 if (game.state === GameState.PLAYING) {
                     game.setState(GameState.PAUSED);
                 }
+            });
+        }
+
+        // Wire virtual D-pad
+        const dpad = document.getElementById('dpad');
+        if (dpad) {
+            const dirMap = { up: Direction.UP, down: Direction.DOWN, left: Direction.LEFT, right: Direction.RIGHT };
+            dpad.addEventListener('touchstart', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                const btn = e.target.closest('.dpad__btn');
+                if (btn && game.state === GameState.PLAYING) {
+                    const dir = dirMap[btn.dataset.dir];
+                    if (dir) game.inputHandler.queueDirection(dir);
+                }
+            }, { passive: false });
+            dpad.addEventListener('touchend', (e) => {
+                e.stopPropagation();
+                e.preventDefault();
+            }, { passive: false });
+        }
+
+        // Wire mobile input method selector
+        const mobileInputSelector = document.getElementById('mobile-input-selector');
+        const savedMobileInput = game.storage.get('mobileInput', 'swipe');
+        game.inputHandler.mobileInputMethod = savedMobileInput;
+
+        // Show/hide D-pad based on input method
+        const updateDpadVisibility = () => {
+            if (dpad) {
+                dpad.hidden = game.inputHandler.mobileInputMethod !== 'dpad';
+            }
+        };
+        updateDpadVisibility();
+
+        if (mobileInputSelector) {
+            // Sync initial state
+            mobileInputSelector.querySelectorAll('[data-input]').forEach(opt => {
+                opt.setAttribute('aria-checked', String(opt.dataset.input === savedMobileInput));
+            });
+
+            mobileInputSelector.addEventListener('click', (e) => {
+                const option = e.target.closest('[data-input]');
+                if (!option) return;
+                const method = option.dataset.input;
+                game.inputHandler.mobileInputMethod = method;
+                game.storage.set('mobileInput', method);
+                mobileInputSelector.querySelectorAll('[data-input]').forEach(opt => {
+                    opt.setAttribute('aria-checked', String(opt.dataset.input === method));
+                });
+                updateDpadVisibility();
+                game.audio.init();
+                game.audio.playConfirm();
             });
         }
 
