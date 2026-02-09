@@ -1,19 +1,42 @@
 ## ADDED Requirements
 
-### Requirement: Toggle preview animations
-The system SHALL display animated side-by-side canvas previews below each settings toggle (Wall Collision and Smooth Animation) showing the visual difference between the on and off states.
+### Requirement: Difficulty preview animation
+The system SHALL display an animated canvas preview below the Difficulty segmented selector showing the wall behavior for the currently selected difficulty.
 
-#### Scenario: Wall Collision preview display
+#### Scenario: Difficulty preview display
 - **WHEN** the settings screen is opened
-- **THEN** two labeled mini-canvases ("On" / "Off") appear below the Wall Collision toggle, one showing a snake hitting a wall and stopping, the other showing a snake wrapping through the wall
+- **THEN** a mini-canvas appears below the Difficulty selector showing a snake demonstrating the wall behavior for the current difficulty (wrap-around for Easy, wall-kill for Medium/Hard)
+
+#### Scenario: Difficulty preview updates on selection change
+- **GIVEN** the settings screen is visible
+- **WHEN** the player selects a different difficulty
+- **THEN** the preview canvas updates to show the wall behavior for the newly selected difficulty
+
+#### Scenario: Difficulty preview loops continuously
+- **WHEN** the settings screen is visible
+- **THEN** the difficulty preview animation loops seamlessly without user interaction
+
+### Requirement: Smooth Animation preview animation
+The system SHALL display animated side-by-side canvas previews below the Smooth Animation toggle showing the visual difference between interpolated and grid-snap movement.
 
 #### Scenario: Smooth Animation preview display
-- **WHEN** the settings screen is opened
-- **THEN** two labeled mini-canvases ("On" / "Off") appear below the Smooth Animation toggle, one showing smooth interpolated snake movement, the other showing classic grid-snap movement
+- **WHEN** the settings screen is opened and Smooth Animation toggle is not disabled by Reduce Motion
+- **THEN** two labeled mini-canvases ("Smooth" / "Classic") appear below the Smooth Animation toggle, one showing smooth interpolated snake movement, the other showing classic grid-snap movement
 
-#### Scenario: Toggle previews loop continuously
-- **WHEN** the settings screen is visible
-- **THEN** all toggle preview animations loop seamlessly without user interaction
+#### Scenario: Smooth Animation preview hidden when disabled
+- **GIVEN** the Reduce Motion toggle is on
+- **WHEN** the settings screen is opened
+- **THEN** the Smooth Animation preview is hidden (the toggle shows aria-disabled with "Disabled by Reduce Motion" hint)
+
+#### Scenario: Smooth Animation preview reacts to Reduce Motion toggle
+- **GIVEN** the settings screen is visible
+- **WHEN** the player toggles Reduce Motion on
+- **THEN** the Smooth Animation preview is hidden
+- **AND** when the player toggles Reduce Motion off, the preview reappears
+
+#### Scenario: Smooth Animation preview loops continuously
+- **WHEN** the settings screen is visible and the preview is shown
+- **THEN** the Smooth Animation preview animations loop seamlessly without user interaction
 
 ### Requirement: Theme swatch preview animations
 The system SHALL display an animated canvas preview within each theme swatch showing a mini snake moving on that theme's background, grid, and snake colors.
