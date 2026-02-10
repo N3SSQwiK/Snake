@@ -38,9 +38,9 @@ Additionally, `_getNavigableButtons()` resolves focusable elements per screen vi
 ```js
 const SCREEN_NAV = {
   'mode-select': { back: 'hideModeSelect', focusEntry: '.mode-card[aria-checked="true"]', grid: { cols: 2, selector: '.mode-card' } },
-  'settings':    { back: 'hideSettings',    focusEntry: '.screen-settings .ui-btn-close' },
-  'leaderboard': { back: 'hideLeaderboard', focusEntry: '.screen-leaderboard .ui-btn-close' },
-  'shortcuts':   { back: 'hideShortcuts',   focusEntry: '.screen-shortcuts .ui-btn-close' },
+  'settings':    { back: 'hideSettings',    focusEntry: '.screen-settings .ui-panel__close' },
+  'leaderboard': { back: 'hideLeaderboard', focusEntry: '.screen-leaderboard .ui-panel__close' },
+  'shortcuts':   { back: 'hideShortcuts',   focusEntry: '.screen-shortcuts .ui-panel__close' },
   'initials':    { back: 'hideInitials',    focusEntry: null, ownKeyHandler: true },
 };
 ```

@@ -403,17 +403,17 @@ const SCREEN_NAV = {
     },
     'settings': {
         back: 'hideSettings',
-        focusEntry: '.screen-settings .ui-btn-close',
+        focusEntry: '.screen-settings .ui-panel__close',
         audio: 'playBack'
     },
     'leaderboard': {
         back: 'hideLeaderboard',
-        focusEntry: '.screen-leaderboard .ui-btn-close',
+        focusEntry: '.screen-leaderboard .ui-panel__close',
         audio: 'playBack'
     },
     'shortcuts': {
         back: 'hideShortcuts',
-        focusEntry: '.screen-shortcuts .ui-btn-close',
+        focusEntry: '.screen-shortcuts .ui-panel__close',
         audio: 'playBack'
     },
     'initials': {
