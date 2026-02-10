@@ -13,7 +13,7 @@ The system SHALL display a start menu when the game is in MENU state.
 #### Scenario: Start game
 - **GIVEN** the start menu is displayed
 - **WHEN** the player clicks the play button
-- **THEN** the game transitions to PLAYING state and the menu is hidden
+- **THEN** the mode selection screen is displayed
 
 #### Scenario: Open settings
 - **GIVEN** the start menu is displayed
@@ -52,10 +52,28 @@ The system SHALL allow players to pause and resume the game during play.
 - **WHEN** the player clicks quit
 - **THEN** the game resets and transitions to MENU state
 
-#### Scenario: Escape key returns to menu
-- **GIVEN** the game is in PLAYING, PAUSED, or GAMEOVER state
+#### Scenario: Escape key on pause resumes game
+- **GIVEN** the game is in PAUSED state
+- **WHEN** the player presses Escape
+- **THEN** the game resumes (transitions to PLAYING state)
+
+#### Scenario: Escape key on game over returns to menu
+- **GIVEN** the game is in GAMEOVER state
 - **WHEN** the player presses Escape
 - **THEN** the game resets and transitions to MENU state
+
+#### Scenario: Escape key on modal dismisses modal
+- **GIVEN** a modal overlay is open (settings, leaderboard, shortcuts, mode-select)
+- **WHEN** the player presses Escape
+- **THEN** the modal is dismissed via navigateBack() with appropriate audio feedback
+
+### Requirement: Initials Entry Focus Restoration
+The system SHALL use standard focus restoration when the initials modal closes.
+
+#### Scenario: Initials close restores focus
+- **GIVEN** the initials entry screen was opened from the game over sequence
+- **WHEN** the initials screen closes (submit or cancel)
+- **THEN** focus is restored via _releaseFocus() to the previously focused element
 
 ### Requirement: Game Over Screen
 The system SHALL display an animated game over screen when the game ends.
@@ -102,7 +120,7 @@ The system SHALL provide a settings screen as a modal overlay that does not chan
 
 #### Scenario: Return from settings
 - **GIVEN** the settings screen is displayed
-- **WHEN** the player navigates back (Backspace or close button)
+- **WHEN** the player navigates back (Escape, Backspace, or close button)
 - **THEN** the previous screen is displayed and all preview animations are stopped
 
 ### Requirement: Mobile Pause Button

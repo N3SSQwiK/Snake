@@ -138,7 +138,7 @@ The system SHALL accept input from gamepads using the standard Gamepad API, supp
 #### Scenario: Circle button back
 - **GIVEN** a gamepad is connected and a non-menu screen is displayed
 - **WHEN** the player presses Circle (O)
-- **THEN** the same back action as Backspace is triggered (via UIManager.navigateBack())
+- **THEN** the same back action as Escape and Backspace is triggered (via UIManager.navigateBack())
 
 #### Scenario: Options button pause
 - **GIVEN** a gamepad is connected and the game is in PLAYING or PAUSED state
@@ -153,8 +153,8 @@ The system SHALL accept input from gamepads using the standard Gamepad API, supp
 
 #### Scenario: Gamepad menu navigation
 - **GIVEN** a gamepad is connected and a menu is displayed
-- **WHEN** the player presses D-pad up or down
-- **THEN** focus moves between menu buttons (via UIManager.navigateMenu()) with playNavigate() audio feedback
+- **WHEN** the player presses D-pad up, down, left, or right
+- **THEN** focus moves between navigable elements (via UIManager.navigateMenu()) with playNavigate() audio feedback, respecting grid layout when declared
 
 #### Scenario: Gamepad audio feedback
 - **GIVEN** a gamepad is connected and a menu is displayed
@@ -207,4 +207,4 @@ The system SHALL allow the player to enter leaderboard initials using a gamepad.
 #### Scenario: Post-initials focus
 - **GIVEN** the player has submitted or cancelled initials entry
 - **WHEN** the initials screen closes
-- **THEN** focus moves to the first button on the game over screen
+- **THEN** focus is restored via _releaseFocus() to the previously focused element
