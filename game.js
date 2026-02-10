@@ -16,6 +16,21 @@ const GameState = {
     GAMEOVER: 'GAMEOVER'
 };
 
+const GameMode = {
+    CLASSIC: 'classic',
+    TIME_ATTACK: 'timeAttack',
+    MAZE: 'maze',
+    ZEN: 'zen'
+};
+
+// Time Attack constants (values in ticks; 10 ticks/s)
+const TIME_ATTACK_DURATION = 600;              // 60 seconds
+const TIME_ATTACK_SELF_COLLISION_PENALTY = 50; // 5 seconds
+
+// Maze constants
+const MAZE_OBSTACLE_COUNTS = { easy: 15, medium: 20, hard: 25 };
+const MAZE_MAX_REGEN_ATTEMPTS = 10;
+
 const Direction = {
     UP: 'UP',
     DOWN: 'DOWN',
@@ -312,6 +327,67 @@ const DEFAULT_THEME = THEMES.classic;
 // Difficulty rank mapping for theme unlock checks
 const DIFFICULTY_RANKS = { easy: 1, medium: 2, hard: 3 };
 
+// Mode rules: per-mode collision handlers, tick hooks, and feature flags
+const MODE_RULES = {
+    [GameMode.CLASSIC]: {
+        onWallCollision(game) { game.handleGameOver(); },
+        onSelfCollision(game) { game.handleGameOver(); },
+        onTick() {},
+        hasLeaderboard: true,
+        hasScore: true,
+        hasSpecialFood: true,
+        shouldSpawnObstacles: false,
+        hudExtras: []
+    },
+    [GameMode.TIME_ATTACK]: {
+        onWallCollision(game) { game.handleGameOver(); },
+        onSelfCollision(game) {
+            game.timeAttackTimer = Math.max(0, game.timeAttackTimer - TIME_ATTACK_SELF_COLLISION_PENALTY);
+            if (game.timeAttackTimer <= 0) {
+                game.handleGameOver();
+            }
+        },
+        onTick(game) {
+            if (game.timeAttackTimer > 0) {
+                game.timeAttackTimer--;
+                if (game.timeAttackTimer <= 0) {
+                    game._timeAttackExpired = true;
+                    game.handleGameOver();
+                }
+            }
+        },
+        hasLeaderboard: true,
+        hasScore: true,
+        hasSpecialFood: true,
+        shouldSpawnObstacles: false,
+        hudExtras: ['timer']
+    },
+    [GameMode.MAZE]: {
+        onWallCollision(game) { game.handleGameOver(); },
+        onSelfCollision(game) { game.handleGameOver(); },
+        onTick() {},
+        hasLeaderboard: true,
+        hasScore: true,
+        hasSpecialFood: true,
+        shouldSpawnObstacles: true,
+        hudExtras: []
+    },
+    [GameMode.ZEN]: {
+        onWallCollision(game) {
+            const head = game.snake.getHead();
+            const wrapped = game.wrapPosition(head);
+            game.snake.setHeadPosition(wrapped);
+        },
+        onSelfCollision() {},
+        onTick() {},
+        hasLeaderboard: false,
+        hasScore: false,
+        hasSpecialFood: false,
+        shouldSpawnObstacles: false,
+        hudExtras: []
+    }
+};
+
 // =============================================================================
 // AUDIO MANAGER CLASS
 // =============================================================================
@@ -478,15 +554,17 @@ class StorageManager {
         }
     }
 
-    getLeaderboard(difficulty, assisted = false) {
+    getLeaderboard(difficulty, assisted = false, mode = GameMode.CLASSIC) {
         const board = this.get('leaderboard', []);
         // Filter by assisted flag (legacy entries without field are non-assisted)
         const filtered = board.filter(e => !!(e.assisted) === assisted);
-        if (!difficulty) return filtered;
-        return filtered.filter(e => e.difficulty === difficulty || !e.difficulty);
+        // Filter by mode (legacy entries without mode field are classic)
+        const modeFiltered = filtered.filter(e => (e.mode || GameMode.CLASSIC) === mode);
+        if (!difficulty) return modeFiltered;
+        return modeFiltered.filter(e => e.difficulty === difficulty || !e.difficulty);
     }
 
-    addScore(initials, score, difficulty, assisted = false) {
+    addScore(initials, score, difficulty, assisted = false, mode = GameMode.CLASSIC) {
         const sanitized = String(initials).toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) || 'AAA';
         const validScore = typeof score === 'number' && score >= 0 ? Math.floor(score) : 0;
         const entry = {
@@ -494,9 +572,10 @@ class StorageManager {
             score: validScore,
             difficulty: difficulty || undefined,
             assisted: assisted || undefined,
+            mode: mode || undefined,
             timestamp: Date.now()
         };
-        // Store all entries together, cap at 10 per difficulty
+        // Store all entries together, cap at 100 for 18 mode+difficulty+assisted buckets
         const allEntries = this.get('leaderboard', []);
         allEntries.push(entry);
         allEntries.sort((a, b) =>
@@ -504,16 +583,16 @@ class StorageManager {
             (DIFFICULTY_RANKS[b.difficulty] || 0) - (DIFFICULTY_RANKS[a.difficulty] || 0) ||
             a.timestamp - b.timestamp
         );
-        this.set('leaderboard', allEntries.slice(0, 50));
+        this.set('leaderboard', allEntries.slice(0, 100));
     }
 
-    isHighScore(score, difficulty, assisted = false) {
-        const board = this.getLeaderboard(difficulty, assisted).slice(0, 10);
+    isHighScore(score, difficulty, assisted = false, mode = GameMode.CLASSIC) {
+        const board = this.getLeaderboard(difficulty, assisted, mode).slice(0, 10);
         return board.length < 10 || score > board[board.length - 1].score;
     }
 
-    isNewTopScore(score, difficulty, assisted = false) {
-        const board = this.getLeaderboard(difficulty, assisted);
+    isNewTopScore(score, difficulty, assisted = false, mode = GameMode.CLASSIC) {
+        const board = this.getLeaderboard(difficulty, assisted, mode);
         return board.length === 0 || score > board[0].score;
     }
 
@@ -850,6 +929,19 @@ class Renderer {
             CELL_SIZE - 2,
             CELL_SIZE - 2
         );
+    }
+
+    drawObstacles(obstacles) {
+        if (!obstacles || obstacles.length === 0) return;
+        this.ctx.fillStyle = this.theme.colors.grid;
+        for (const obs of obstacles) {
+            this.ctx.fillRect(
+                obs.x * CELL_SIZE,
+                obs.y * CELL_SIZE,
+                CELL_SIZE,
+                CELL_SIZE
+            );
+        }
     }
 
     drawRoundedRect(x, y, width, height, radius, color) {
@@ -1472,6 +1564,8 @@ class InputHandler {
             if (this.uiManager) {
                 if (justPressed(12)) this.uiManager.navigateMenu('up');
                 if (justPressed(13)) this.uiManager.navigateMenu('down');
+                if (justPressed(14)) this.uiManager.navigateMenu('left');
+                if (justPressed(15)) this.uiManager.navigateMenu('right');
             }
         }
 
@@ -1998,6 +2092,7 @@ class UIManager {
         this.leaderboardBody = document.getElementById('leaderboard-body');
         this.animationToggle = document.getElementById('animation-style-toggle');
         this.difficultySelector = document.getElementById('difficulty-selector');
+        this.modeSelector = document.getElementById('mode-selector');
         this.volumeSlider = document.getElementById('volume-slider');
         this.volumeValue = document.getElementById('volume-value');
         this.muteToggle = document.getElementById('mute-toggle');
@@ -2036,6 +2131,7 @@ class UIManager {
                 String(this.game.accessibilityMode || false));
         }
         this.syncDifficultySelector();
+        this.syncModeSelector();
         this.syncAudioControls();
 
         // Event delegation on overlay
@@ -2095,6 +2191,12 @@ class UIManager {
     }
 
     navigateMenu(direction) {
+        if (direction === 'left' || direction === 'right') {
+            const delta = direction === 'right' ? 1 : -1;
+            const seg = document.activeElement?.closest('.ui-segmented__option');
+            if (seg) this._cycleSegmented(seg, delta);
+            return;
+        }
         const buttons = this._getNavigableButtons();
         if (buttons.length === 0) return;
         const currentIndex = buttons.indexOf(document.activeElement);
@@ -2107,6 +2209,20 @@ class UIManager {
         buttons[nextIndex].focus();
         this.game.audio.init();
         this.game.audio.playNavigate();
+    }
+
+    _cycleSegmented(element, delta) {
+        const group = element.closest('.ui-segmented');
+        if (!group) return false;
+        const options = Array.from(group.querySelectorAll('.ui-segmented__option'));
+        const currentIndex = options.indexOf(element);
+        if (currentIndex < 0) return false;
+        const nextIndex = (currentIndex + delta + options.length) % options.length;
+        const next = options[nextIndex];
+        if (next.disabled || next.getAttribute('aria-disabled') === 'true') return false;
+        next.click();
+        next.focus();
+        return true;
     }
 
     navigateBack() {
@@ -2144,6 +2260,16 @@ class UIManager {
 
     _handleMenuKeyDown(e) {
         const dataUi = this.container.getAttribute('data-ui');
+
+        // ArrowLeft / ArrowRight: cycle segmented controls
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            if (dataUi === 'initials') return;
+            const seg = document.activeElement?.closest('.ui-segmented__option');
+            if (seg && this._cycleSegmented(seg, e.key === 'ArrowRight' ? 1 : -1)) {
+                e.preventDefault();
+            }
+            return;
+        }
 
         // ArrowUp / ArrowDown: cycle focus between buttons
         if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
@@ -2458,6 +2584,16 @@ class UIManager {
         });
     }
 
+    syncModeSelector() {
+        if (!this.modeSelector) return;
+        const options = this.modeSelector.querySelectorAll('.ui-segmented__option');
+        options.forEach(opt => {
+            const isActive = opt.dataset.mode === this.game.mode;
+            opt.setAttribute('aria-checked', String(isActive));
+            opt.setAttribute('tabindex', isActive ? '0' : '-1');
+        });
+    }
+
     showThemeUnlockNotification(themeNames) {
         const names = themeNames.map(k => THEMES[k]?.name || k).join(', ');
         this._pendingThemeUnlock = names;
@@ -2486,20 +2622,43 @@ class UIManager {
     }
 
     updateScore(score) {
-        this.finalScoreEl.textContent = score;
+        const rules = MODE_RULES[this.game.mode];
 
-        // Update best score label (filtered by current difficulty)
-        const board = this.game.storage.getLeaderboard(this.game.difficulty);
-        if (board.length > 0) {
-            this.bestScoreEl.textContent = `Best: ${board[0].score}`;
+        // Mode-specific heading
+        if (this.game.mode === GameMode.TIME_ATTACK && this.game._timeAttackExpired) {
+            this.gameoverHeading.textContent = "Time's Up!";
+        } else {
+            this.gameoverHeading.textContent = 'Game Over';
+        }
+        this.gameoverHeading.classList.remove('new-high-score');
+
+        // Score display
+        if (rules.hasScore) {
+            this.finalScoreEl.textContent = score;
+            this.finalScoreEl.hidden = false;
+        } else {
+            this.finalScoreEl.hidden = true;
+        }
+
+        // Best score label (filtered by current difficulty and mode)
+        if (rules.hasLeaderboard) {
+            const board = this.game.storage.getLeaderboard(this.game.difficulty, false, this.game.mode);
+            if (board.length > 0) {
+                this.bestScoreEl.textContent = `Best: ${board[0].score}`;
+            } else {
+                this.bestScoreEl.textContent = '';
+            }
         } else {
             this.bestScoreEl.textContent = '';
         }
 
-        // Reset celebration and status (applied after initials submit)
-        this.gameoverHeading.textContent = 'Game Over';
-        this.gameoverHeading.classList.remove('new-high-score');
-        this.leaderboardStatusEl.textContent = '';
+        // Time Attack: show remaining time on early death
+        if (this.game.mode === GameMode.TIME_ATTACK && !this.game._timeAttackExpired && this.game.timeAttackTimer > 0) {
+            const remaining = Math.ceil(this.game.timeAttackTimer / TICK_RATE);
+            this.leaderboardStatusEl.textContent = `${remaining}s remaining`;
+        } else {
+            this.leaderboardStatusEl.textContent = '';
+        }
 
         // Show theme unlock notification if pending
         const themeUnlockEl = document.getElementById('theme-unlock-status');
@@ -2665,8 +2824,9 @@ class UIManager {
         const initials = this._initialsChars.map(c => String.fromCharCode(65 + c)).join('');
         const difficulty = this.game.difficulty;
         const assisted = this.game.accessibilityMode || false;
-        const wasTopScore = this._initialsStorage.isNewTopScore(this._initialsScore, difficulty, assisted);
-        this._initialsStorage.addScore(initials, this._initialsScore, difficulty, assisted);
+        const mode = this.game.mode;
+        const wasTopScore = this._initialsStorage.isNewTopScore(this._initialsScore, difficulty, assisted, mode);
+        this._initialsStorage.addScore(initials, this._initialsScore, difficulty, assisted, mode);
         this.hideInitials();
         // Refresh game-over screen with updated best score
         this.updateScore(this._initialsScore);
@@ -2708,9 +2868,22 @@ class UIManager {
         });
     }
 
-    showLeaderboard() {
+    showLeaderboard(modeFilter) {
+        // Default mode: current game mode, but Zen has no leaderboard so fall back to Classic
+        const mode = modeFilter || (this.game.mode === GameMode.ZEN ? GameMode.CLASSIC : this.game.mode);
+        this._leaderboardMode = mode;
         const midGame = this.game.state === GameState.PLAYING || this.game.state === GameState.PAUSED;
         this.leaderboardBody.replaceChildren();
+
+        // Update mode tabs
+        const tabList = this.container.querySelector('.leaderboard-mode-tabs');
+        if (tabList) {
+            tabList.querySelectorAll('.leaderboard-tab').forEach(tab => {
+                const isActive = tab.dataset.mode === mode;
+                tab.setAttribute('aria-selected', String(isActive));
+                tab.setAttribute('tabindex', isActive ? '0' : '-1');
+            });
+        }
 
         // Update heading
         const heading = this.leaderboardBody.closest('.ui-panel')?.querySelector('.ui-heading');
@@ -2722,7 +2895,7 @@ class UIManager {
             const suffix = assisted ? ' (Extended Time)' : '';
             if (heading) heading.textContent = `High Scores \u2014 ${diffName}${suffix}`;
 
-            const board = this.game.storage.getLeaderboard(this.game.difficulty, assisted).slice(0, 10);
+            const board = this.game.storage.getLeaderboard(this.game.difficulty, assisted, mode).slice(0, 10);
             if (board.length === 0) {
                 const empty = document.createElement('p');
                 empty.className = 'leaderboard-empty';
@@ -2735,7 +2908,7 @@ class UIManager {
             // Grouped view: sections for Hard, Medium, Easy, then Unranked
             if (heading) heading.textContent = 'High Scores';
 
-            const standardEntries = this.game.storage.getLeaderboard(null, false);
+            const standardEntries = this.game.storage.getLeaderboard(null, false, mode);
             const groups = [
                 { key: 'hard', name: 'Hard' },
                 { key: 'medium', name: 'Medium' },
@@ -2771,7 +2944,7 @@ class UIManager {
             }
 
             // Extended Time Mode sections (separate from standard)
-            const assistedEntries = this.game.storage.getLeaderboard(null, true);
+            const assistedEntries = this.game.storage.getLeaderboard(null, true, mode);
             for (const group of groups) {
                 const entries = assistedEntries
                     .filter(e => e.difficulty === group.key)
@@ -2815,6 +2988,22 @@ class UIManager {
     handleOverlayClick(event) {
         // Initialize audio on any user interaction
         this.game.audio.init();
+
+        // Check for mode selector click (start menu)
+        const modeOption = event.target.closest('.ui-segmented__option[data-mode]');
+        if (modeOption && modeOption.dataset.mode) {
+            this.game.setMode(modeOption.dataset.mode);
+            this.syncModeSelector();
+            this.game.audio.playConfirm();
+            return;
+        }
+
+        // Check for leaderboard mode tab click
+        const leaderboardTab = event.target.closest('.leaderboard-tab[data-mode]');
+        if (leaderboardTab && leaderboardTab.dataset.mode) {
+            this.showLeaderboard(leaderboardTab.dataset.mode);
+            return;
+        }
 
         // Check for difficulty selector click (no data-action)
         const diffOption = event.target.closest('.ui-segmented__option[data-difficulty]');
@@ -2942,6 +3131,100 @@ class UIManager {
 }
 
 // =============================================================================
+// MAZE UTILITIES
+// =============================================================================
+
+function floodFillReachable(start, obstacleSet, gridWidth, gridHeight, wallsWrap) {
+    const visited = new Set();
+    const queue = [`${start.x},${start.y}`];
+    visited.add(queue[0]);
+
+    while (queue.length > 0) {
+        const key = queue.shift();
+        const [cx, cy] = key.split(',').map(Number);
+        const neighbors = [
+            { x: cx, y: cy - 1 },
+            { x: cx, y: cy + 1 },
+            { x: cx - 1, y: cy },
+            { x: cx + 1, y: cy }
+        ];
+        for (const n of neighbors) {
+            let nx = n.x, ny = n.y;
+            if (wallsWrap) {
+                nx = ((nx % gridWidth) + gridWidth) % gridWidth;
+                ny = ((ny % gridHeight) + gridHeight) % gridHeight;
+            } else {
+                if (nx < 0 || nx >= gridWidth || ny < 0 || ny >= gridHeight) continue;
+            }
+            const nk = `${nx},${ny}`;
+            if (!visited.has(nk) && !obstacleSet.has(nk)) {
+                visited.add(nk);
+                queue.push(nk);
+            }
+        }
+    }
+    return visited.size;
+}
+
+function generateObstacles(difficulty, snakeStart, gridWidth, gridHeight, wallsWrap) {
+    let count = MAZE_OBSTACLE_COUNTS[difficulty] || MAZE_OBSTACLE_COUNTS.medium;
+    const totalCells = gridWidth * gridHeight;
+
+    // Protected cells: snake start + adjacent + initial body (3 cells behind start)
+    const protectedSet = new Set();
+    protectedSet.add(`${snakeStart.x},${snakeStart.y}`);
+    // Adjacent cells
+    const adj = [
+        { x: snakeStart.x - 1, y: snakeStart.y },
+        { x: snakeStart.x + 1, y: snakeStart.y },
+        { x: snakeStart.x, y: snakeStart.y - 1 },
+        { x: snakeStart.x, y: snakeStart.y + 1 }
+    ];
+    for (const a of adj) {
+        if (a.x >= 0 && a.x < gridWidth && a.y >= 0 && a.y < gridHeight) {
+            protectedSet.add(`${a.x},${a.y}`);
+        }
+    }
+    // Initial body cells (3 behind start, assuming snake faces RIGHT)
+    for (let i = 1; i <= 3; i++) {
+        const bx = snakeStart.x - i;
+        if (bx >= 0) protectedSet.add(`${bx},${snakeStart.y}`);
+    }
+
+    for (let attempt = 0; attempt <= MAZE_MAX_REGEN_ATTEMPTS; attempt++) {
+        const obstacles = [];
+        const obstacleSet = new Set();
+
+        let placed = 0;
+        let tries = 0;
+        while (placed < count && tries < count * 10) {
+            tries++;
+            const x = Math.floor(Math.random() * gridWidth);
+            const y = Math.floor(Math.random() * gridHeight);
+            const key = `${x},${y}`;
+            if (protectedSet.has(key) || obstacleSet.has(key)) continue;
+            obstacleSet.add(key);
+            obstacles.push({ x, y });
+            placed++;
+        }
+
+        // Validate: all non-obstacle cells must be reachable from snake start
+        const reachable = floodFillReachable(snakeStart, obstacleSet, gridWidth, gridHeight, wallsWrap);
+        const expectedReachable = totalCells - obstacleSet.size;
+        if (reachable === expectedReachable) {
+            return { obstacles, obstacleSet };
+        }
+
+        // Reduce count for next attempt
+        count = Math.max(1, count - 1);
+    }
+
+    // Fallback: no obstacles (all generation attempts failed reachability checks)
+    console.warn('Maze: obstacle generation failed after', MAZE_MAX_REGEN_ATTEMPTS, 'attempts; starting with no obstacles');
+    return { obstacles: [], obstacleSet: new Set() };
+}
+
+// =============================================================================
 // GAME CLASS
 // =============================================================================
 
@@ -2979,6 +3262,18 @@ class Game {
 
         // Difficulty setting
         this.difficulty = this.storage.get('difficulty', 'medium');
+
+        // Mode setting (validate against MODE_RULES in case of corrupted localStorage)
+        this.mode = this.storage.get('mode', GameMode.CLASSIC);
+        if (!MODE_RULES[this.mode]) this.mode = GameMode.CLASSIC;
+
+        // Time Attack state
+        this.timeAttackTimer = 0;
+        this._timeAttackExpired = false;
+
+        // Maze state
+        this.obstacles = [];
+        this._obstacleSet = null;
 
         // Wall collision derived from difficulty
         this.wallCollisionEnabled = this.getDifficultyConfig().wallCollision;
@@ -3034,7 +3329,9 @@ class Game {
 
         // Screen reader announcements for state changes
         if (newState === GameState.PLAYING && oldState === GameState.MENU) {
-            this.announce('Game started. Use arrow keys or WASD to move.');
+            const modeNames = { classic: 'Classic', timeAttack: 'Time Attack', maze: 'Maze', zen: 'Zen' };
+            const modeName = modeNames[this.mode] || 'Classic';
+            this.announce(`${modeName} mode started. Use arrow keys or WASD to move.`);
         } else if (newState === GameState.PLAYING && oldState === GameState.PAUSED) {
             this.announce('Game resumed.');
         } else if (newState === GameState.PAUSED) {
@@ -3056,7 +3353,8 @@ class Game {
 
         // Play high score or game over sound
         const assisted = this.accessibilityMode || false;
-        const isNewTopScore = this.storage.isNewTopScore(this.score, this.difficulty, assisted);
+        const hasLeaderboard = MODE_RULES[this.mode].hasLeaderboard;
+        const isNewTopScore = hasLeaderboard && this.storage.isNewTopScore(this.score, this.difficulty, assisted, this.mode);
         if (isNewTopScore && this.score > 0) {
             this.audio.playHighScore();
         } else {
@@ -3064,7 +3362,7 @@ class Game {
         }
 
         // Screen reader announcement
-        const isNewHighScore = this.storage.isHighScore(this.score, this.difficulty, assisted);
+        const isNewHighScore = hasLeaderboard && this.storage.isHighScore(this.score, this.difficulty, assisted, this.mode);
         if (isNewTopScore && this.score > 0) {
             this.announce(`Game over! New high score: ${this.score} points!`, 'assertive');
         } else if (isNewHighScore && this.score > 0) {
@@ -3075,7 +3373,7 @@ class Game {
 
         this.setState(GameState.GAMEOVER);
 
-        if (this.ui && this.score > 0 && this.storage.isHighScore(this.score, this.difficulty, assisted)) {
+        if (this.ui && hasLeaderboard && this.score > 0 && this.storage.isHighScore(this.score, this.difficulty, assisted, this.mode)) {
             this.ui.showInitials(this.score, this.storage);
         }
     }
@@ -3260,6 +3558,12 @@ class Game {
         return Math.max(config.toxicSegmentBase, Math.floor(this.snake.body.length / config.toxicSegmentDivisor));
     }
 
+    setMode(mode) {
+        if (!MODE_RULES[mode]) return;
+        this.mode = mode;
+        this.storage.set('mode', mode);
+    }
+
     setDifficulty(difficulty) {
         if (!DIFFICULTY_LEVELS[difficulty]) return;
         this.difficulty = difficulty;
@@ -3271,13 +3575,19 @@ class Game {
 
     updateHUD() {
         if (!this._hudScore) return;
+        const rules = MODE_RULES[this.mode];
+
         this._hudScore.textContent = this.score;
         this._hudLength.textContent = this.snake.body.length;
         this._hudDifficulty.textContent = this.getDifficultyConfig().name;
 
-        // Toxic penalty info (only when difficulty has toxic food)
+        // Hide score/difficulty in modes without scoring (Zen)
+        if (this._hudScoreStat) this._hudScoreStat.hidden = !rules.hasScore;
+        if (this._hudDifficultyStat) this._hudDifficultyStat.hidden = !rules.hasScore;
+
+        // Toxic penalty info (only when difficulty has toxic food AND mode has special food)
         const config = this.getDifficultyConfig();
-        if (config.toxicFoodChance > 0) {
+        if (rules.hasSpecialFood && config.toxicFoodChance > 0) {
             const penalty = this.calculateToxicPenalty();
             const segments = this.calculateToxicSegments();
             this._hudToxicPoints.textContent = `${penalty} pts`;
@@ -3285,6 +3595,19 @@ class Game {
             this._hudToxic.hidden = false;
         } else {
             this._hudToxic.hidden = true;
+        }
+
+        // Time Attack timer
+        if (this._hudTimerStat) {
+            if (this.mode === GameMode.TIME_ATTACK) {
+                const seconds = Math.ceil(this.timeAttackTimer / TICK_RATE);
+                const mins = Math.floor(seconds / 60);
+                const secs = seconds % 60;
+                this._hudTimer.textContent = `${mins}:${String(secs).padStart(2, '0')}`;
+                this._hudTimerStat.hidden = false;
+            } else {
+                this._hudTimerStat.hidden = true;
+            }
         }
     }
 
@@ -3315,36 +3638,45 @@ class Game {
             this.snake.setHeadPosition(wrapped);
         }
 
-        // Check wall collision (only if enabled)
+        // Check wall collision (only if enabled) — delegate to mode rules
         if (this.wallCollisionEnabled && this.checkWallCollision(head)) {
-            this.handleGameOver();
-            return;
+            MODE_RULES[this.mode].onWallCollision(this);
+            if (this.state === GameState.GAMEOVER) return;
         }
 
-        // Check self-collision (AFTER wrap is applied)
+        // Check self-collision (AFTER wrap is applied) — delegate to mode rules
         if (this.snake.checkSelfCollision()) {
+            MODE_RULES[this.mode].onSelfCollision(this);
+            if (this.state === GameState.GAMEOVER) return;
+        }
+
+        // Check obstacle collision (Maze mode)
+        if (this._obstacleSet && this._obstacleSet.has(`${this.snake.getHead().x},${this.snake.getHead().y}`)) {
             this.handleGameOver();
             return;
         }
 
         // Spawn initial food if none exists
+        const foodExclude = this.obstacles.length > 0
+            ? [...this.snake.body, ...this.obstacles]
+            : this.snake.body;
         if (!this.food.position) {
-            this.food.spawn(this.snake.body, this.tickCount, FoodType.REGULAR, this._getRegularDecay());
+            this.food.spawn(foodExclude, this.tickCount, FoodType.REGULAR, this._getRegularDecay());
         }
 
         // Check regular food collision
         if (this.food.checkCollision(this.snake.getHead())) {
-            this.score += this.food.points;
+            if (MODE_RULES[this.mode].hasScore) this.score += this.food.points;
             this.snake.grow();
             this.updateTickRate();
             this.audio.playEat();
             this.announceScore(this.score);
-            this.food.spawn(this.snake.body, this.tickCount, FoodType.REGULAR, this._getRegularDecay());
+            this.food.spawn(foodExclude, this.tickCount, FoodType.REGULAR, this._getRegularDecay());
         }
 
         // Check food decay (Extended Time Mode uses doubled timers)
         if (this.food.isExpired(this.tickCount)) {
-            this.food.spawn(this.snake.body, this.tickCount, FoodType.REGULAR, this._getRegularDecay());
+            this.food.spawn(foodExclude, this.tickCount, FoodType.REGULAR, this._getRegularDecay());
         }
 
         // Special food logic
@@ -3354,7 +3686,7 @@ class Game {
         if (this.specialFood.position && this.specialFood.checkCollision(this.snake.getHead())) {
             switch (this.specialFood.foodType) {
                 case FoodType.BONUS:
-                    this.score += 25;
+                    if (MODE_RULES[this.mode].hasScore) this.score += 25;
                     this.snake.grow();
                     this.updateTickRate();
                     this.audio.playBonusEat();
@@ -3362,7 +3694,7 @@ class Game {
                     break;
                 case FoodType.TOXIC: {
                     // Deduct points (never go negative)
-                    this.score = Math.max(0, this.score + this.calculateToxicPenalty());
+                    if (MODE_RULES[this.mode].hasScore) this.score = Math.max(0, this.score + this.calculateToxicPenalty());
                     // Remove segments
                     const segmentsToRemove = this.calculateToxicSegments();
                     this.snake.removeSegments(segmentsToRemove);
@@ -3393,10 +3725,10 @@ class Game {
             this.specialFood.reset();
         }
 
-        // Maybe spawn special food (only if none active)
-        if (!this.specialFood.position && this.tickCount % 10 === 0) {
+        // Maybe spawn special food (only if none active and mode allows)
+        if (MODE_RULES[this.mode].hasSpecialFood && !this.specialFood.position && this.tickCount % 10 === 0) {
             const roll = Math.random();
-            const excludePositions = [...this.snake.body];
+            const excludePositions = [...this.snake.body, ...this.obstacles];
             if (this.food.position) excludePositions.push(this.food.position);
             const goodFoodPos = this.food.position;
             const prox = diffConfig.hazardProximity;
@@ -3420,6 +3752,9 @@ class Game {
                 this.specialFood.spawn(excludePositions, this.tickCount, FoodType.BONUS, specialDecay);
             }
         }
+
+        // Mode-specific tick logic (timer countdown, etc.) — runs after all collision/food/scoring
+        MODE_RULES[this.mode].onTick(this);
     }
 
     render() {
@@ -3428,6 +3763,7 @@ class Game {
         // Draw game elements when playing, paused, or game over
         if (this.state === GameState.PLAYING || this.state === GameState.PAUSED || this.state === GameState.GAMEOVER) {
             this.renderer.drawGrid();
+            this.renderer.drawObstacles(this.obstacles);
 
             // Calculate interpolation factor for smooth animation
             const interpFactor = this.animationStyle === 'smooth'
@@ -3461,10 +3797,35 @@ class Game {
         this.updateTickRate();
         this.wallCollisionEnabled = this.getDifficultyConfig().wallCollision;
 
+        // Zen mode: force wall wrapping regardless of difficulty
+        if (this.mode === GameMode.ZEN) {
+            this.wallCollisionEnabled = false;
+        }
+
         // Reset snake to center
         const centerX = Math.floor(this.config.gridWidth / 2);
         const centerY = Math.floor(this.config.gridHeight / 2);
         this.snake.reset(centerX, centerY, this.config.initialSnakeLength || 3);
+
+        // Time Attack timer
+        this.timeAttackTimer = this.mode === GameMode.TIME_ATTACK ? TIME_ATTACK_DURATION : 0;
+        this._timeAttackExpired = false;
+
+        // Maze obstacles
+        if (MODE_RULES[this.mode].shouldSpawnObstacles) {
+            const result = generateObstacles(
+                this.difficulty,
+                { x: centerX, y: centerY },
+                this.config.gridWidth,
+                this.config.gridHeight,
+                !this.wallCollisionEnabled
+            );
+            this.obstacles = result.obstacles;
+            this._obstacleSet = result.obstacleSet;
+        } else {
+            this.obstacles = [];
+            this._obstacleSet = null;
+        }
 
         // Reset food
         this.food.reset();
@@ -3508,6 +3869,10 @@ if (typeof document !== 'undefined') {
         game._hudToxicPoints = document.getElementById('hud-toxic-points');
         game._hudToxicSegments = document.getElementById('hud-toxic-segments');
         game._hudToxic = document.getElementById('hud-toxic');
+        game._hudTimer = document.getElementById('hud-timer');
+        game._hudTimerStat = document.getElementById('hud-timer-stat');
+        game._hudScoreStat = document.getElementById('hud-score')?.parentElement;
+        game._hudDifficultyStat = document.getElementById('hud-difficulty')?.parentElement;
 
         // Block all input while settings modal is open
         game.inputHandler.inputGate = () => container.hasAttribute('data-ui');
@@ -3670,6 +4035,11 @@ if (typeof document !== 'undefined') {
                 if (game.ui) game.ui.syncDifficultySelector();
                 console.log(`Difficulty set to ${level} (walls ${game.wallCollisionEnabled ? 'kill' : 'wrap'})`);
             },
+            setMode(mode) {
+                game.setMode(mode);
+                if (game.ui) game.ui.syncModeSelector();
+                console.log(`Mode set to ${mode}`);
+            },
             setSpeed(tickRate) {
                 game.tickInterval = 1000 / tickRate;
                 console.log(`Tick rate set to ${tickRate} Hz`);
@@ -3686,12 +4056,15 @@ if (typeof document !== 'undefined') {
                 const config = game.getDifficultyConfig();
                 console.table({
                     state: game.state,
+                    mode: game.mode,
                     difficulty: `${config.name} (${game.difficulty})`,
                     score: game.score,
                     length: game.snake.body.length,
                     tickRate: `${(1000 / game.tickInterval).toFixed(1)} Hz`,
                     wallCollision: game.wallCollisionEnabled,
                     tickCount: game.tickCount,
+                    timeAttackTimer: game.mode === GameMode.TIME_ATTACK ? game.timeAttackTimer : 'N/A',
+                    obstacles: game.obstacles.length,
                     food: game.food.active ? `${game.food.foodType} at (${game.food.x},${game.food.y})` : 'none',
                     specialFood: game.specialFood.active ? `${game.specialFood.foodType} at (${game.specialFood.x},${game.specialFood.y})` : 'none'
                 });
@@ -3701,6 +4074,7 @@ if (typeof document !== 'undefined') {
                     'dev.spawnFood(type)  - Spawn food: regular, bonus, toxic, lethal',
                     'dev.setScore(n)      - Set score and update speed',
                     'dev.setDifficulty(d) - Set difficulty: easy, medium, hard',
+                    'dev.setMode(m)       - Set mode: classic, timeAttack, maze, zen',
                     'dev.setSpeed(hz)     - Override tick rate',
                     'dev.grow(n)          - Grow snake by n segments (default 5)',
                     'dev.kill()           - Trigger game over',
@@ -3718,9 +4092,12 @@ if (typeof document !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         Game, Renderer, Snake, Food, InputHandler, StorageManager, UIManager, AudioManager,
-        GameState, Direction, FoodType,
+        GameState, Direction, FoodType, GameMode, MODE_RULES,
         GRID_WIDTH, GRID_HEIGHT, CELL_SIZE,
         FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_DECAY_TICKS_ACCESSIBLE, FOOD_MAX_SPAWN_ATTEMPTS,
-        SPECIAL_FOOD_TICKS, SPECIAL_FOOD_TICKS_ACCESSIBLE, DIFFICULTY_LEVELS
+        SPECIAL_FOOD_TICKS, SPECIAL_FOOD_TICKS_ACCESSIBLE, DIFFICULTY_LEVELS,
+        TIME_ATTACK_DURATION, TIME_ATTACK_SELF_COLLISION_PENALTY,
+        MAZE_OBSTACLE_COUNTS, MAZE_MAX_REGEN_ATTEMPTS,
+        generateObstacles, floodFillReachable
     };
 }

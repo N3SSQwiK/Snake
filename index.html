@@ -37,6 +37,10 @@
                     <span id="hud-toxic-segments">-1 seg</span>
                 </span>
             </div>
+            <div class="hud-stat" id="hud-timer-stat" hidden>
+                <span class="hud-label">Time</span>
+                <span class="hud-value" id="hud-timer">1:00</span>
+            </div>
         </div>
 
         <canvas id="game-canvas" role="application" aria-label="Snake game - Use arrow keys or WASD to control the snake" tabindex="0"></canvas>
@@ -64,6 +68,20 @@
             <div class="screen-menu" role="dialog" aria-label="Start menu">
                 <div class="ui-panel">
                     <h1 class="ui-title">SNAKE</h1>
+                    <div class="ui-segmented ui-segmented--compact" id="mode-selector" role="radiogroup" aria-label="Game mode">
+                        <button class="ui-segmented__option" data-mode="classic" role="radio" aria-checked="true">
+                            <span class="ui-segmented__label">Classic</span>
+                        </button>
+                        <button class="ui-segmented__option" data-mode="timeAttack" role="radio" aria-checked="false">
+                            <span class="ui-segmented__label">Time Attack</span>
+                        </button>
+                        <button class="ui-segmented__option" data-mode="maze" role="radio" aria-checked="false">
+                            <span class="ui-segmented__label">Maze</span>
+                        </button>
+                        <button class="ui-segmented__option" data-mode="zen" role="radio" aria-checked="false">
+                            <span class="ui-segmented__label">Zen</span>
+                        </button>
+                    </div>
                     <div class="ui-btn-group">
                         <button class="ui-btn ui-btn--primary" data-action="play">Play</button>
                         <button class="ui-btn ui-btn--ghost" data-action="settings">Settings</button>
@@ -124,6 +142,11 @@
                 <div class="ui-panel ui-panel--wide">
                     <button class="ui-panel__close" data-action="leaderboard-back" aria-label="Close leaderboard">&times;</button>
                     <h2 class="ui-heading">High Scores</h2>
+                    <div class="leaderboard-mode-tabs" role="tablist" aria-label="Filter by mode">
+                        <button class="leaderboard-tab" data-mode="classic" role="tab" aria-selected="true" tabindex="0">Classic</button>
+                        <button class="leaderboard-tab" data-mode="timeAttack" role="tab" aria-selected="false" tabindex="-1">Time Attack</button>
+                        <button class="leaderboard-tab" data-mode="maze" role="tab" aria-selected="false" tabindex="-1">Maze</button>
+                    </div>
                     <div class="leaderboard-table" id="leaderboard-body" aria-live="polite" aria-atomic="true"></div>
                 </div>
             </div>
