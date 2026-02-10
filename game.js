@@ -2194,7 +2194,8 @@ class UIManager {
         // Mode card grid: 2D directional navigation
         const dataUi = this.container.getAttribute('data-ui');
         if (dataUi === 'mode-select') {
-            if (this._navigateModeCardGrid(direction)) return;
+            this._navigateModeCardGrid(direction);
+            return;
         }
 
         if (direction === 'left' || direction === 'right') {
