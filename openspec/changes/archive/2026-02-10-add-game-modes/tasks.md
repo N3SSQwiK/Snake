@@ -83,6 +83,6 @@
 
 - [x] 10.1 Ensure `startGame()` / reset logic clears mode-specific state (timer, obstacles) on new game
 - [x] 10.2 Ensure Zen mode quit (Escape from PLAYING) returns to menu without game over screen
-- [ ] 10.3 Test all 12 mode+difficulty combinations in browser (4 modes x 3 difficulties)
+- [x] 10.3 Test all 12 mode+difficulty combinations in browser (4 modes x 3 difficulties)
 - [x] 10.4 Verify screen reader announcements include mode info (e.g., "Time Attack started. 60 seconds.")
 - [x] 10.5 Run full test suite and fix any regressions
