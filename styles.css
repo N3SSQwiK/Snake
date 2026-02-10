@@ -774,6 +774,61 @@ body {
 }
 
 /* =============================================================================
+   VIRTUAL D-PAD
+   ============================================================================= */
+
+.dpad {
+    display: none;
+    position: relative;
+    width: 144px;
+    height: 144px;
+    margin: 1rem auto 0;
+}
+
+.dpad__btn {
+    position: absolute;
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    background: var(--ui-glass-bg);
+    border: 1px solid var(--ui-glass-border);
+    color: var(--ui-text-secondary);
+    cursor: pointer;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    transition: background 0.1s;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+
+.dpad__btn:active {
+    background: var(--ui-glass-highlight);
+}
+
+.dpad__btn--up    { top: 0;    left: 48px; }
+.dpad__btn--down  { bottom: 0; left: 48px; }
+.dpad__btn--left  { top: 48px; left: 0;    }
+.dpad__btn--right { top: 48px; right: 0;   }
+
+@media (pointer: coarse) {
+    .game-container[data-state="PLAYING"] .dpad:not([hidden]) {
+        display: block;
+    }
+}
+
+/* Settings: touch-only group hidden on fine-pointer devices */
+.ui-setting-group--touch-only {
+    display: none;
+}
+
+@media (pointer: coarse) {
+    .ui-setting-group--touch-only {
+        display: block;
+    }
+}
+
+/* =============================================================================
    INITIALS ENTRY
    ============================================================================= */
 

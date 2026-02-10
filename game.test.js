@@ -3031,3 +3031,325 @@ describe('UIManager destroy cleanup', () => {
         global.document.removeEventListener = origRemove;
     });
 });
+
+// =============================================================================
+// GAMEPAD POLLING TESTS
+// =============================================================================
+
+describe('InputHandler gamepad polling', () => {
+    let canvas;
+    let inputHandler;
+    let currentDirection;
+
+    function createMockGamepad(buttonStates = {}, mapping = 'standard') {
+        const buttons = new Array(17).fill(null).map((_, i) => ({
+            pressed: !!buttonStates[i]
+        }));
+        return { index: 0, mapping, buttons };
+    }
+
+    beforeEach(() => {
+        canvas = createMockCanvas();
+        canvas.addEventListener = mock.fn();
+        canvas.removeEventListener = mock.fn();
+        currentDirection = Direction.RIGHT;
+        inputHandler = new InputHandler(canvas, () => currentDirection);
+        inputHandler.gamepadIndex = 0;
+        inputHandler.prevButtonStates = new Array(17).fill(false);
+        inputHandler.getGameState = () => GameState.PLAYING;
+        inputHandler.uiManager = {
+            navigateMenu: mock.fn(),
+            navigateBack: mock.fn(),
+            _getNavigableButtons: mock.fn(() => [])
+        };
+        // Mock navigator.getGamepads
+        global.navigator = global.navigator || {};
+        global.navigator.getGamepads = mock.fn(() => [createMockGamepad()]);
+    });
+
+    test('D-pad up (button 12) queues UP direction', () => {
+        global.navigator.getGamepads = mock.fn(() => [createMockGamepad({ 12: true })]);
+        inputHandler.pollGamepad();
+        assert.strictEqual(inputHandler.directionQueue.length, 1);
+        assert.strictEqual(inputHandler.directionQueue[0], Direction.UP);
+    });
+
+    test('D-pad down (button 13) queues DOWN direction', () => {
+        currentDirection = Direction.RIGHT;
+        global.navigator.getGamepads = mock.fn(() => [createMockGamepad({ 13: true })]);
+        inputHandler.pollGamepad();
+        assert.strictEqual(inputHandler.directionQueue[0], Direction.DOWN);
+    });
+
+    test('D-pad left (button 14) queues LEFT direction', () => {
+        currentDirection = Direction.UP;
+        global.navigator.getGamepads = mock.fn(() => [createMockGamepad({ 14: true })]);
+        inputHandler.pollGamepad();
+        assert.strictEqual(inputHandler.directionQueue[0], Direction.LEFT);
+    });
+
+    test('D-pad right (button 15) queues RIGHT direction', () => {
+        currentDirection = Direction.UP;
+        global.navigator.getGamepads = mock.fn(() => [createMockGamepad({ 15: true })]);
+        inputHandler.pollGamepad();
+        assert.strictEqual(inputHandler.directionQueue[0], Direction.RIGHT);
+    });
+
+    test('rising-edge debounce: held button only fires once', () => {
+        currentDirection = Direction.UP;
+        global.navigator.getGamepads = mock.fn(() => [createMockGamepad({ 15: true })]);
+        inputHandler.pollGamepad(); // First press: should queue
+        assert.strictEqual(inputHandler.directionQueue.length, 1);
+        inputHandler.directionQueue = []; // Clear queue
+        inputHandler.pollGamepad(); // Still held: should not queue
+        assert.strictEqual(inputHandler.directionQueue.length, 0);
+    });
+
+    test('button fires again after release and re-press', () => {
+        currentDirection = Direction.UP;
+        global.navigator.getGamepads = mock.fn(() => [createMockGamepad({ 15: true })]);
+        inputHandler.pollGamepad(); // Press
+        inputHandler.directionQueue = [];
+        global.navigator.getGamepads = mock.fn(() => [createMockGamepad({})]); // Release
+        inputHandler.pollGamepad();
+        global.navigator.getGamepads = mock.fn(() => [createMockGamepad({ 15: true })]); // Re-press
+        inputHandler.pollGamepad();
+        assert.strictEqual(inputHandler.directionQueue.length, 1);
+    });
+
+    test('Cross button calls pause during PLAYING', () => {
+        const pauseMock = mock.fn();
+        inputHandler.actionCallbacks.pause = pauseMock;
+        global.navigator.getGamepads = mock.fn(() => [createMockGamepad({ 0: true })]);
+        inputHandler.pollGamepad();
+        assert.strictEqual(pauseMock.mock.calls.length, 1);
+    });
+
+    test('Cross button clicks activeElement during menus', () => {
+        inputHandler.getGameState = () => GameState.MENU;
+        const clickMock = mock.fn();
+        global.document.activeElement = { click: clickMock };
+        global.navigator.getGamepads = mock.fn(() => [createMockGamepad({ 0: true })]);
+        inputHandler.pollGamepad();
+        assert.strictEqual(clickMock.mock.calls.length, 1);
+    });
+
+    test('Circle button calls navigateBack', () => {
+        inputHandler.getGameState = () => GameState.MENU;
+        global.navigator.getGamepads = mock.fn(() => [createMockGamepad({ 1: true })]);
+        inputHandler.pollGamepad();
+        assert.strictEqual(inputHandler.uiManager.navigateBack.mock.calls.length, 1);
+    });
+
+    test('Options button (9) calls pause action', () => {
+        const pauseMock = mock.fn();
+        inputHandler.actionCallbacks.pause = pauseMock;
+        global.navigator.getGamepads = mock.fn(() => [createMockGamepad({ 9: true })]);
+        inputHandler.pollGamepad();
+        assert.strictEqual(pauseMock.mock.calls.length, 1);
+    });
+
+    test('D-pad up/down navigates menu when not PLAYING', () => {
+        inputHandler.getGameState = () => GameState.MENU;
+        global.navigator.getGamepads = mock.fn(() => [createMockGamepad({ 12: true })]);
+        inputHandler.pollGamepad();
+        assert.strictEqual(inputHandler.uiManager.navigateMenu.mock.calls.length, 1);
+        assert.strictEqual(inputHandler.uiManager.navigateMenu.mock.calls[0].arguments[0], 'up');
+    });
+
+    test('D-pad down navigates menu down when not PLAYING', () => {
+        inputHandler.getGameState = () => GameState.MENU;
+        global.navigator.getGamepads = mock.fn(() => [createMockGamepad({ 13: true })]);
+        inputHandler.pollGamepad();
+        assert.strictEqual(inputHandler.uiManager.navigateMenu.mock.calls[0].arguments[0], 'down');
+    });
+
+    test('skips polling when gamepadIndex is null', () => {
+        inputHandler.gamepadIndex = null;
+        global.navigator.getGamepads = mock.fn(() => [createMockGamepad({ 12: true })]);
+        inputHandler.pollGamepad();
+        assert.strictEqual(inputHandler.directionQueue.length, 0);
+        assert.strictEqual(global.navigator.getGamepads.mock.calls.length, 0);
+    });
+
+    test('skips non-standard mapping gamepads', () => {
+        global.navigator.getGamepads = mock.fn(() => [createMockGamepad({ 12: true }, '')]);
+        inputHandler.pollGamepad();
+        assert.strictEqual(inputHandler.directionQueue.length, 0);
+    });
+
+    test('inputGate blocks D-pad directions during gameplay', () => {
+        inputHandler.inputGate = () => true;
+        global.navigator.getGamepads = mock.fn(() => [createMockGamepad({ 12: true })]);
+        inputHandler.pollGamepad();
+        assert.strictEqual(inputHandler.directionQueue.length, 0);
+    });
+});
+
+// =============================================================================
+// TAP ZONE TESTS
+// =============================================================================
+
+
+// =============================================================================
+// NAVIGATEMENU / NAVIGATEBACK TESTS
+// =============================================================================
+
+describe('UIManager navigateMenu', () => {
+    test('navigateMenu down cycles focus to first button when none focused', () => {
+        const { ui, buttons } = createMockUIManager('MENU');
+        global.document.activeElement = {};
+        ui.navigateMenu('down');
+        assert.strictEqual(buttons[0].focus.mock.calls.length, 1);
+    });
+
+    test('navigateMenu down wraps from last to first', () => {
+        const { ui, buttons } = createMockUIManager('MENU');
+        global.document.activeElement = buttons[2];
+        ui.navigateMenu('down');
+        assert.strictEqual(buttons[0].focus.mock.calls.length, 1);
+    });
+
+    test('navigateMenu up wraps from first to last', () => {
+        const { ui, buttons } = createMockUIManager('MENU');
+        global.document.activeElement = buttons[0];
+        ui.navigateMenu('up');
+        assert.strictEqual(buttons[2].focus.mock.calls.length, 1);
+    });
+
+    test('navigateMenu plays navigate sound', () => {
+        const { ui, audioMock } = createMockUIManager('MENU');
+        global.document.activeElement = {};
+        ui.navigateMenu('down');
+        assert.strictEqual(audioMock.playNavigate.mock.calls.length, 1);
+    });
+
+    test('navigateMenu is no-op when no navigable buttons', () => {
+        const { ui, setDataState } = createMockUIManager('MENU');
+        setDataState('PLAYING');
+        ui.navigateMenu('down');
+        // Should not throw
+    });
+});
+
+describe('UIManager navigateBack', () => {
+    test('navigateBack closes settings modal', () => {
+        const { ui, setDataUi, audioMock, container } = createMockUIManager('MENU');
+        setDataUi('settings');
+        ui.hideSettings = mock.fn();
+        ui.navigateBack();
+        assert.strictEqual(audioMock.playBack.mock.calls.length, 1);
+        assert.strictEqual(ui.hideSettings.mock.calls.length, 1);
+    });
+
+    test('navigateBack closes leaderboard modal', () => {
+        const { ui, setDataUi, audioMock } = createMockUIManager('MENU');
+        setDataUi('leaderboard');
+        ui.hideLeaderboard = mock.fn();
+        ui.navigateBack();
+        assert.strictEqual(audioMock.playBack.mock.calls.length, 1);
+        assert.strictEqual(ui.hideLeaderboard.mock.calls.length, 1);
+    });
+
+    test('navigateBack closes shortcuts modal', () => {
+        const { ui, setDataUi } = createMockUIManager('MENU');
+        setDataUi('shortcuts');
+        ui.hideShortcuts = mock.fn();
+        ui.navigateBack();
+        assert.strictEqual(ui.hideShortcuts.mock.calls.length, 1);
+    });
+
+    test('navigateBack resumes from PAUSED state', () => {
+        const { ui, gameMock, audioMock } = createMockUIManager('PAUSED');
+        ui.navigateBack();
+        assert.strictEqual(audioMock.playConfirm.mock.calls.length, 1);
+        assert.strictEqual(gameMock.setState.mock.calls.length, 1);
+        assert.strictEqual(gameMock.setState.mock.calls[0].arguments[0], GameState.PLAYING);
+    });
+
+    test('navigateBack returns to menu from GAMEOVER', () => {
+        const { ui, gameMock, audioMock } = createMockUIManager('GAMEOVER');
+        ui.navigateBack();
+        assert.strictEqual(audioMock.playBack.mock.calls.length, 1);
+        assert.strictEqual(gameMock.reset.mock.calls.length, 1);
+        assert.strictEqual(gameMock.setState.mock.calls[0].arguments[0], GameState.MENU);
+    });
+
+    test('navigateBack is no-op on MENU state', () => {
+        const { ui, gameMock, audioMock } = createMockUIManager('MENU');
+        ui.navigateBack();
+        assert.strictEqual(gameMock.setState.mock.calls.length, 0);
+        assert.strictEqual(audioMock.playBack.mock.calls.length, 0);
+    });
+});
+
+// =============================================================================
+// INPUT METHOD PERSISTENCE TESTS
+// =============================================================================
+
+describe('InputHandler mobile input method', () => {
+    test('default mobileInputMethod is swipe', () => {
+        const canvas = createMockCanvas();
+        canvas.addEventListener = mock.fn();
+        canvas.removeEventListener = mock.fn();
+        const handler = new InputHandler(canvas, () => Direction.RIGHT);
+        assert.strictEqual(handler.mobileInputMethod, 'swipe');
+    });
+
+    test('mobileInputMethod can be set to dpad', () => {
+        const canvas = createMockCanvas();
+        canvas.addEventListener = mock.fn();
+        canvas.removeEventListener = mock.fn();
+        const handler = new InputHandler(canvas, () => Direction.RIGHT);
+        handler.mobileInputMethod = 'dpad';
+        assert.strictEqual(handler.mobileInputMethod, 'dpad');
+    });
+
+    test('StorageManager persists mobileInput setting', () => {
+        const storage = new StorageManager('test_');
+        storage.set('mobileInput', 'dpad');
+        assert.strictEqual(storage.get('mobileInput', 'swipe'), 'dpad');
+        storage.remove('mobileInput');
+    });
+
+    test('handleTouchEnd ignores swipes when mobileInputMethod is dpad', () => {
+        const canvas = createMockCanvas();
+        canvas.addEventListener = mock.fn();
+        canvas.removeEventListener = mock.fn();
+        const handler = new InputHandler(canvas, () => Direction.RIGHT);
+        handler.mobileInputMethod = 'dpad';
+
+        // Simulate a swipe
+        handler.touchStartX = 100;
+        handler.touchStartY = 100;
+        const touchEndEvent = {
+            preventDefault: mock.fn(),
+            changedTouches: [{ clientX: 200, clientY: 100 }]
+        };
+        handler.handleTouchEnd(touchEndEvent);
+
+        // Direction queue should remain empty — swipe was ignored
+        assert.strictEqual(handler.directionQueue.length, 0);
+    });
+
+    test('handleTouchEnd processes swipes when mobileInputMethod is swipe', () => {
+        const canvas = createMockCanvas();
+        canvas.addEventListener = mock.fn();
+        canvas.removeEventListener = mock.fn();
+        const handler = new InputHandler(canvas, () => Direction.UP);
+        handler.mobileInputMethod = 'swipe';
+
+        // Simulate a rightward swipe
+        handler.touchStartX = 100;
+        handler.touchStartY = 100;
+        const touchEndEvent = {
+            preventDefault: mock.fn(),
+            changedTouches: [{ clientX: 200, clientY: 100 }]
+        };
+        handler.handleTouchEnd(touchEndEvent);
+
+        // Direction queue should have the swipe direction
+        assert.strictEqual(handler.directionQueue.length, 1);
+        assert.strictEqual(handler.directionQueue[0], Direction.RIGHT);
+    });
+});
