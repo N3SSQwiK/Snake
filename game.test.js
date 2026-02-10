@@ -3311,4 +3311,45 @@ describe('InputHandler mobile input method', () => {
         assert.strictEqual(storage.get('mobileInput', 'swipe'), 'dpad');
         storage.remove('mobileInput');
     });
+
+    test('handleTouchEnd ignores swipes when mobileInputMethod is dpad', () => {
+        const canvas = createMockCanvas();
+        canvas.addEventListener = mock.fn();
+        canvas.removeEventListener = mock.fn();
+        const handler = new InputHandler(canvas, () => Direction.RIGHT);
+        handler.mobileInputMethod = 'dpad';
+
+        // Simulate a swipe
+        handler.touchStartX = 100;
+        handler.touchStartY = 100;
+        const touchEndEvent = {
+            preventDefault: mock.fn(),
+            changedTouches: [{ clientX: 200, clientY: 100 }]
+        };
+        handler.handleTouchEnd(touchEndEvent);
+
+        // Direction queue should remain empty — swipe was ignored
+        assert.strictEqual(handler.directionQueue.length, 0);
+    });
+
+    test('handleTouchEnd processes swipes when mobileInputMethod is swipe', () => {
+        const canvas = createMockCanvas();
+        canvas.addEventListener = mock.fn();
+        canvas.removeEventListener = mock.fn();
+        const handler = new InputHandler(canvas, () => Direction.UP);
+        handler.mobileInputMethod = 'swipe';
+
+        // Simulate a rightward swipe
+        handler.touchStartX = 100;
+        handler.touchStartY = 100;
+        const touchEndEvent = {
+            preventDefault: mock.fn(),
+            changedTouches: [{ clientX: 200, clientY: 100 }]
+        };
+        handler.handleTouchEnd(touchEndEvent);
+
+        // Direction queue should have the swipe direction
+        assert.strictEqual(handler.directionQueue.length, 1);
+        assert.strictEqual(handler.directionQueue[0], Direction.RIGHT);
+    });
 });

@@ -1374,6 +1374,13 @@ class InputHandler {
             return;
         }
 
+        // When D-pad mode is selected, ignore canvas swipes
+        if (this.mobileInputMethod === 'dpad') {
+            this.touchStartX = null;
+            this.touchStartY = null;
+            return;
+        }
+
         const touch = event.changedTouches[0];
         const deltaX = touch.clientX - this.touchStartX;
         const deltaY = touch.clientY - this.touchStartY;
@@ -1468,9 +1475,18 @@ class InputHandler {
             }
         }
 
-        // Cross (button 0): pause during gameplay, confirm in menus
+        // Cross (button 0): confirm in overlays, pause during gameplay, confirm in menus
         if (justPressed(0)) {
-            if (isPlaying) {
+            if (dataUi && this.uiManager) {
+                // Active overlay takes priority — treat as confirm/click
+                const navBtns = this.uiManager._getNavigableButtons();
+                if (navBtns.length > 0 && !navBtns.includes(document.activeElement)) {
+                    navBtns[0].focus();
+                }
+                if (document.activeElement && typeof document.activeElement.click === 'function') {
+                    document.activeElement.click();
+                }
+            } else if (isPlaying) {
                 if (this.actionCallbacks.pause) this.actionCallbacks.pause();
             } else if (this.uiManager) {
                 const navBtns = this.uiManager._getNavigableButtons();
