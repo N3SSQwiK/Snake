@@ -68,25 +68,37 @@
             <div class="screen-menu" role="dialog" aria-label="Start menu">
                 <div class="ui-panel">
                     <h1 class="ui-title">SNAKE</h1>
-                    <div class="ui-segmented ui-segmented--compact" id="mode-selector" role="radiogroup" aria-label="Game mode">
-                        <button class="ui-segmented__option" data-mode="classic" role="radio" aria-checked="true">
-                            <span class="ui-segmented__label">Classic</span>
-                        </button>
-                        <button class="ui-segmented__option" data-mode="timeAttack" role="radio" aria-checked="false">
-                            <span class="ui-segmented__label">Time Attack</span>
-                        </button>
-                        <button class="ui-segmented__option" data-mode="maze" role="radio" aria-checked="false">
-                            <span class="ui-segmented__label">Maze</span>
-                        </button>
-                        <button class="ui-segmented__option" data-mode="zen" role="radio" aria-checked="false">
-                            <span class="ui-segmented__label">Zen</span>
-                        </button>
-                    </div>
                     <div class="ui-btn-group">
                         <button class="ui-btn ui-btn--primary" data-action="play">Play</button>
                         <button class="ui-btn ui-btn--ghost" data-action="settings">Settings</button>
                         <button class="ui-btn ui-btn--ghost" data-action="highscores">High Scores</button>
                     </div>
+                </div>
+            </div>
+
+            <!-- Mode Select Screen -->
+            <div class="screen-mode-select" role="dialog" aria-label="Select game mode">
+                <div class="ui-panel">
+                    <h2 class="ui-heading">Select Mode</h2>
+                    <div class="mode-card-grid ui-segmented" role="radiogroup" aria-label="Game mode">
+                        <button class="mode-card ui-segmented__option" data-mode="classic" role="radio" aria-checked="true">
+                            <span class="mode-card__name">Classic</span>
+                            <span class="mode-card__desc">Eat food, grow longer, don't hit walls</span>
+                        </button>
+                        <button class="mode-card ui-segmented__option" data-mode="timeAttack" role="radio" aria-checked="false">
+                            <span class="mode-card__name">Time Attack</span>
+                            <span class="mode-card__desc">Score as much as you can in 60 seconds</span>
+                        </button>
+                        <button class="mode-card ui-segmented__option" data-mode="maze" role="radio" aria-checked="false">
+                            <span class="mode-card__name">Maze</span>
+                            <span class="mode-card__desc">Navigate through random obstacles</span>
+                        </button>
+                        <button class="mode-card ui-segmented__option" data-mode="zen" role="radio" aria-checked="false">
+                            <span class="mode-card__name">Zen</span>
+                            <span class="mode-card__desc">Relaxed play, no score or game over</span>
+                        </button>
+                    </div>
+                    <button class="ui-btn ui-btn--primary" data-action="start-game">Start Game</button>
                 </div>
             </div>
 

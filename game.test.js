@@ -3479,6 +3479,235 @@ describe('UIManager navigateBack', () => {
         assert.strictEqual(gameMock.setState.mock.calls.length, 0);
         assert.strictEqual(audioMock.playBack.mock.calls.length, 0);
     });
+
+    test('navigateBack closes mode-select screen', () => {
+        const { ui, setDataUi, audioMock } = createMockUIManager('MENU');
+        setDataUi('mode-select');
+        ui.hideModeSelect = mock.fn();
+        ui.navigateBack();
+        assert.strictEqual(audioMock.playBack.mock.calls.length, 1);
+        assert.strictEqual(ui.hideModeSelect.mock.calls.length, 1);
+    });
+});
+
+// =============================================================================
+// MODE SELECT SCREEN TESTS
+// =============================================================================
+
+describe('UIManager mode select screen', () => {
+    test('showModeSelect sets data-ui to mode-select', () => {
+        const { ui, container } = createMockUIManager('MENU');
+        ui.syncModeCards = mock.fn();
+        ui._trapFocus = mock.fn();
+        ui.showModeSelect();
+        assert.strictEqual(container.setAttribute.mock.calls.some(
+            c => c.arguments[0] === 'data-ui' && c.arguments[1] === 'mode-select'
+        ), true);
+        assert.strictEqual(ui.syncModeCards.mock.calls.length, 1);
+        assert.strictEqual(ui._trapFocus.mock.calls.length, 1);
+    });
+
+    test('hideModeSelect removes data-ui', () => {
+        const { ui, container } = createMockUIManager('MENU');
+        ui._releaseFocus = mock.fn();
+        ui.hideModeSelect();
+        assert.strictEqual(container.removeAttribute.mock.calls.some(
+            c => c.arguments[0] === 'data-ui'
+        ), true);
+        assert.strictEqual(ui._releaseFocus.mock.calls.length, 1);
+    });
+
+    test('Play button shows mode-select screen instead of starting game', () => {
+        const { ui, gameMock, audioMock, container } = createMockUIManager('MENU');
+        ui.showModeSelect = mock.fn();
+        const event = {
+            target: {
+                closest: mock.fn((sel) => {
+                    if (sel === '[data-action]') return { dataset: { action: 'play' } };
+                    return null;
+                })
+            }
+        };
+        ui.handleOverlayClick(event);
+        assert.strictEqual(audioMock.playConfirm.mock.calls.length, 1);
+        assert.strictEqual(ui.showModeSelect.mock.calls.length, 1);
+        assert.strictEqual(gameMock.reset.mock.calls.length, 0);
+    });
+
+    test('start-game action starts the game and hides mode-select', () => {
+        const { ui, gameMock, audioMock } = createMockUIManager('MENU');
+        ui.hideModeSelect = mock.fn();
+        const event = {
+            target: {
+                closest: mock.fn((sel) => {
+                    if (sel === '[data-action]') return { dataset: { action: 'start-game' } };
+                    return null;
+                })
+            }
+        };
+        ui.handleOverlayClick(event);
+        assert.strictEqual(audioMock.playConfirm.mock.calls.length, 1);
+        assert.strictEqual(ui.hideModeSelect.mock.calls.length, 1);
+        assert.strictEqual(gameMock.reset.mock.calls.length, 1);
+        assert.strictEqual(gameMock.setState.mock.calls[0].arguments[0], GameState.PLAYING);
+    });
+
+    test('mode card click sets mode and syncs cards', () => {
+        const { ui, gameMock, audioMock } = createMockUIManager('MENU');
+        gameMock.setMode = mock.fn();
+        ui.syncModeCards = mock.fn();
+        const modeCard = {
+            dataset: { mode: 'maze' },
+            closest: mock.fn((sel) => {
+                if (sel === '.mode-card[data-mode]') return modeCard;
+                return null;
+            })
+        };
+        const event = { target: modeCard };
+        ui.handleOverlayClick(event);
+        assert.strictEqual(gameMock.setMode.mock.calls[0].arguments[0], 'maze');
+        assert.strictEqual(ui.syncModeCards.mock.calls.length, 1);
+        assert.strictEqual(audioMock.playConfirm.mock.calls.length, 1);
+    });
+
+    test('syncModeCards updates aria-checked and tabindex', () => {
+        const { ui, gameMock, container } = createMockUIManager('MENU');
+        gameMock.mode = 'timeAttack';
+        const cards = [
+            { dataset: { mode: 'classic' }, setAttribute: mock.fn() },
+            { dataset: { mode: 'timeAttack' }, setAttribute: mock.fn() },
+            { dataset: { mode: 'maze' }, setAttribute: mock.fn() },
+            { dataset: { mode: 'zen' }, setAttribute: mock.fn() }
+        ];
+        container.querySelectorAll = mock.fn((sel) => {
+            if (sel === '.mode-card[data-mode]') return cards;
+            return [];
+        });
+        ui.syncModeCards();
+        // Classic card: not active
+        assert.deepStrictEqual([...cards[0].setAttribute.mock.calls[0].arguments], ['aria-checked', 'false']);
+        assert.deepStrictEqual([...cards[0].setAttribute.mock.calls[1].arguments], ['tabindex', '-1']);
+        // Time Attack card: active
+        assert.deepStrictEqual([...cards[1].setAttribute.mock.calls[0].arguments], ['aria-checked', 'true']);
+        assert.deepStrictEqual([...cards[1].setAttribute.mock.calls[1].arguments], ['tabindex', '0']);
+    });
+});
+
+describe('UIManager mode card grid navigation', () => {
+    function createGridUIManager() {
+        const result = createMockUIManager('MENU');
+        result.setDataUi('mode-select');
+
+        // Create mock mode cards
+        const cards = [];
+        for (let i = 0; i < 4; i++) {
+            const card = {
+                tagName: 'BUTTON',
+                className: 'mode-card ui-segmented__option',
+                dataset: { mode: ['classic', 'timeAttack', 'maze', 'zen'][i] },
+                focus: mock.fn(),
+                closest: mock.fn((sel) => {
+                    if (sel === '.mode-card') return card;
+                    if (sel === '.mode-card-grid') return grid;
+                    return null;
+                }),
+                offsetParent: {}
+            };
+            cards.push(card);
+        }
+
+        const startBtn = {
+            tagName: 'BUTTON',
+            dataset: { action: 'start-game' },
+            focus: mock.fn(),
+            closest: mock.fn((sel) => {
+                if (sel === '.mode-card') return null;
+                return null;
+            }),
+            offsetParent: {}
+        };
+
+        const grid = {
+            querySelectorAll: mock.fn(() => cards)
+        };
+
+        result.container.querySelector = mock.fn((sel) => {
+            if (sel === '.mode-card-grid') return grid;
+            if (sel === '[data-action="start-game"]') return startBtn;
+            if (sel === '.screen-mode-select') return { querySelector: mock.fn(() => null), querySelectorAll: mock.fn(() => [...cards, startBtn]), scrollTop: 0 };
+            return null;
+        });
+
+        return { ...result, cards, startBtn, grid };
+    }
+
+    test('right from Classic focuses Time Attack', () => {
+        const { ui, cards } = createGridUIManager();
+        global.document.activeElement = cards[0]; // Classic
+        ui.navigateMenu('right');
+        assert.strictEqual(cards[1].focus.mock.calls.length, 1);
+    });
+
+    test('left from Time Attack focuses Classic', () => {
+        const { ui, cards } = createGridUIManager();
+        global.document.activeElement = cards[1]; // Time Attack
+        ui.navigateMenu('left');
+        assert.strictEqual(cards[0].focus.mock.calls.length, 1);
+    });
+
+    test('down from Classic focuses Maze', () => {
+        const { ui, cards } = createGridUIManager();
+        global.document.activeElement = cards[0]; // Classic
+        ui.navigateMenu('down');
+        assert.strictEqual(cards[2].focus.mock.calls.length, 1);
+    });
+
+    test('down from Time Attack focuses Zen', () => {
+        const { ui, cards } = createGridUIManager();
+        global.document.activeElement = cards[1]; // Time Attack
+        ui.navigateMenu('down');
+        assert.strictEqual(cards[3].focus.mock.calls.length, 1);
+    });
+
+    test('up from Maze focuses Classic', () => {
+        const { ui, cards } = createGridUIManager();
+        global.document.activeElement = cards[2]; // Maze
+        ui.navigateMenu('up');
+        assert.strictEqual(cards[0].focus.mock.calls.length, 1);
+    });
+
+    test('down from Maze focuses Start Game button', () => {
+        const { ui, cards, startBtn } = createGridUIManager();
+        global.document.activeElement = cards[2]; // Maze (bottom row)
+        ui.navigateMenu('down');
+        assert.strictEqual(startBtn.focus.mock.calls.length, 1);
+    });
+
+    test('right from Time Attack is no-op (right edge)', () => {
+        const { ui, cards } = createGridUIManager();
+        global.document.activeElement = cards[1]; // Time Attack (col 1)
+        ui.navigateMenu('right');
+        // No card should receive focus (already at right edge)
+        assert.strictEqual(cards[0].focus.mock.calls.length, 0);
+        assert.strictEqual(cards[2].focus.mock.calls.length, 0);
+        assert.strictEqual(cards[3].focus.mock.calls.length, 0);
+    });
+
+    test('up from Classic is no-op (top edge)', () => {
+        const { ui, cards } = createGridUIManager();
+        global.document.activeElement = cards[0]; // Classic (top row)
+        ui.navigateMenu('up');
+        assert.strictEqual(cards[1].focus.mock.calls.length, 0);
+        assert.strictEqual(cards[2].focus.mock.calls.length, 0);
+        assert.strictEqual(cards[3].focus.mock.calls.length, 0);
+    });
+
+    test('up from Start Game focuses bottom-left card', () => {
+        const { ui, cards, startBtn } = createGridUIManager();
+        global.document.activeElement = startBtn;
+        ui.navigateMenu('up');
+        assert.strictEqual(cards[2].focus.mock.calls.length, 1); // Maze
+    });
 });
 
 // =============================================================================

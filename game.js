@@ -2092,7 +2092,7 @@ class UIManager {
         this.leaderboardBody = document.getElementById('leaderboard-body');
         this.animationToggle = document.getElementById('animation-style-toggle');
         this.difficultySelector = document.getElementById('difficulty-selector');
-        this.modeSelector = document.getElementById('mode-selector');
+        this.modeCardGrid = this.container.querySelector('.mode-card-grid');
         this.volumeSlider = document.getElementById('volume-slider');
         this.volumeValue = document.getElementById('volume-value');
         this.muteToggle = document.getElementById('mute-toggle');
@@ -2131,7 +2131,7 @@ class UIManager {
                 String(this.game.accessibilityMode || false));
         }
         this.syncDifficultySelector();
-        this.syncModeSelector();
+        this.syncModeCards();
         this.syncAudioControls();
 
         // Event delegation on overlay
@@ -2191,6 +2191,12 @@ class UIManager {
     }
 
     navigateMenu(direction) {
+        // Mode card grid: 2D directional navigation
+        const dataUi = this.container.getAttribute('data-ui');
+        if (dataUi === 'mode-select') {
+            if (this._navigateModeCardGrid(direction)) return;
+        }
+
         if (direction === 'left' || direction === 'right') {
             const delta = direction === 'right' ? 1 : -1;
             const seg = document.activeElement?.closest('.ui-segmented__option');
@@ -2225,10 +2231,83 @@ class UIManager {
         return true;
     }
 
+    _navigateModeCardGrid(direction) {
+        const grid = this.container.querySelector('.mode-card-grid');
+        if (!grid) return false;
+        const cards = Array.from(grid.querySelectorAll('.mode-card'));
+        if (cards.length === 0) return false;
+        const focusedCard = document.activeElement?.closest('.mode-card');
+        const cols = 2;
+
+        // If focus is not on a card (e.g. Start Game button), jump into the grid
+        if (!focusedCard) {
+            if (direction === 'up') {
+                // Up from below grid → bottom-left card
+                const bottomLeft = cards[Math.min(cols, cards.length - 1)];
+                if (bottomLeft) {
+                    bottomLeft.focus();
+                    this.game.audio.init();
+                    this.game.audio.playNavigate();
+                    return true;
+                }
+            }
+            if (direction === 'down') {
+                // Down from below grid (wrapping) → top-left card
+                cards[0].focus();
+                this.game.audio.init();
+                this.game.audio.playNavigate();
+                return true;
+            }
+            return false;
+        }
+
+        const idx = cards.indexOf(focusedCard);
+        if (idx < 0) return false;
+        const row = Math.floor(idx / cols);
+        const col = idx % cols;
+        const rows = Math.ceil(cards.length / cols);
+        let target = null;
+
+        switch (direction) {
+            case 'left':
+                if (col > 0) target = cards[idx - 1];
+                break;
+            case 'right':
+                if (col < cols - 1 && idx + 1 < cards.length) target = cards[idx + 1];
+                break;
+            case 'up':
+                if (row > 0) target = cards[idx - cols];
+                break;
+            case 'down':
+                if (row < rows - 1) {
+                    const nextIdx = idx + cols;
+                    target = nextIdx < cards.length ? cards[nextIdx] : cards[cards.length - 1];
+                } else {
+                    // Down from bottom row → Start Game button
+                    const startBtn = this.container.querySelector('[data-action="start-game"]');
+                    if (startBtn) target = startBtn;
+                }
+                break;
+        }
+
+        if (target) {
+            target.focus();
+            this.game.audio.init();
+            this.game.audio.playNavigate();
+            return true;
+        }
+        return false;
+    }
+
     navigateBack() {
         const dataUi = this.container.getAttribute('data-ui');
         if (dataUi === 'shortcuts') {
             this.hideShortcuts();
+            return;
+        }
+        if (dataUi === 'mode-select') {
+            this.game.audio.playBack();
+            this.hideModeSelect();
             return;
         }
         if (dataUi === 'leaderboard') {
@@ -2261,9 +2340,14 @@ class UIManager {
     _handleMenuKeyDown(e) {
         const dataUi = this.container.getAttribute('data-ui');
 
-        // ArrowLeft / ArrowRight: cycle segmented controls
+        // ArrowLeft / ArrowRight: cycle segmented controls (or 2D grid nav for mode cards)
         if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
             if (dataUi === 'initials') return;
+            if (dataUi === 'mode-select') {
+                e.preventDefault();
+                this.navigateMenu(e.key === 'ArrowRight' ? 'right' : 'left');
+                return;
+            }
             const seg = document.activeElement?.closest('.ui-segmented__option');
             if (seg && this._cycleSegmented(seg, e.key === 'ArrowRight' ? 1 : -1)) {
                 e.preventDefault();
@@ -2584,14 +2668,24 @@ class UIManager {
         });
     }
 
-    syncModeSelector() {
-        if (!this.modeSelector) return;
-        const options = this.modeSelector.querySelectorAll('.ui-segmented__option');
-        options.forEach(opt => {
-            const isActive = opt.dataset.mode === this.game.mode;
-            opt.setAttribute('aria-checked', String(isActive));
-            opt.setAttribute('tabindex', isActive ? '0' : '-1');
+    syncModeCards() {
+        const cards = this.container.querySelectorAll('.mode-card[data-mode]');
+        cards.forEach(card => {
+            const isActive = card.dataset.mode === this.game.mode;
+            card.setAttribute('aria-checked', String(isActive));
+            card.setAttribute('tabindex', isActive ? '0' : '-1');
         });
+    }
+
+    showModeSelect() {
+        this.container.setAttribute('data-ui', 'mode-select');
+        this.syncModeCards();
+        this._trapFocus('.screen-mode-select');
+    }
+
+    hideModeSelect() {
+        this._releaseFocus();
+        this.container.removeAttribute('data-ui');
     }
 
     showThemeUnlockNotification(themeNames) {
@@ -2989,11 +3083,11 @@ class UIManager {
         // Initialize audio on any user interaction
         this.game.audio.init();
 
-        // Check for mode selector click (start menu)
-        const modeOption = event.target.closest('.ui-segmented__option[data-mode]');
-        if (modeOption && modeOption.dataset.mode) {
-            this.game.setMode(modeOption.dataset.mode);
-            this.syncModeSelector();
+        // Check for mode card click (mode select screen)
+        const modeCard = event.target.closest('.mode-card[data-mode]');
+        if (modeCard && modeCard.dataset.mode) {
+            this.game.setMode(modeCard.dataset.mode);
+            this.syncModeCards();
             this.game.audio.playConfirm();
             return;
         }
@@ -3026,6 +3120,11 @@ class UIManager {
         switch (action.dataset.action) {
             case 'play':
                 this.game.audio.playConfirm();
+                this.showModeSelect();
+                break;
+            case 'start-game':
+                this.game.audio.playConfirm();
+                this.hideModeSelect();
                 this.game.reset();
                 this.game.setState(GameState.PLAYING);
                 break;
@@ -4037,7 +4136,7 @@ if (typeof document !== 'undefined') {
             },
             setMode(mode) {
                 game.setMode(mode);
-                if (game.ui) game.ui.syncModeSelector();
+                if (game.ui) game.ui.syncModeCards();
                 console.log(`Mode set to ${mode}`);
             },
             setSpeed(tickRate) {
