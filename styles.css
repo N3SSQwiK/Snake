@@ -310,7 +310,8 @@ body {
     background: var(--ui-glass-highlight);
 }
 
-.ui-panel__close:focus-visible {
+.ui-panel__close:focus-visible,
+.ui-panel__close.focus-visible:focus {
     outline: 2px solid var(--ui-accent);
     outline-offset: 2px;
 }
@@ -382,7 +383,8 @@ body {
     text-align: center;
 }
 
-.ui-btn:focus-visible {
+.ui-btn:focus-visible,
+.ui-btn.focus-visible:focus {
     outline: 2px solid var(--ui-accent);
     outline-offset: 2px;
     box-shadow: 0 0 0 4px var(--ui-accent-glow);
@@ -439,7 +441,8 @@ body {
     transform: scale(0.98);
 }
 
-.ui-btn--danger:focus-visible {
+.ui-btn--danger:focus-visible,
+.ui-btn--danger.focus-visible:focus {
     box-shadow: 0 0 0 3px var(--ui-danger-glow);
 }
 
@@ -466,7 +469,8 @@ body {
     align-items: center;
 }
 
-.ui-toggle:focus-visible .ui-toggle__track {
+.ui-toggle:focus-visible .ui-toggle__track,
+.ui-toggle.focus-visible:focus .ui-toggle__track {
     box-shadow: 0 0 0 3px var(--ui-accent-glow);
 }
 
@@ -565,7 +569,8 @@ body {
     box-shadow: 0 0 8px var(--ui-accent-glow);
 }
 
-.ui-slider:focus-visible {
+.ui-slider:focus-visible,
+.ui-slider.focus-visible:focus {
     outline: 2px solid var(--ui-accent);
     outline-offset: 2px;
 }
@@ -630,7 +635,8 @@ body {
     box-shadow: 0 0 0 1px var(--ui-accent-glow);
 }
 
-.ui-segmented__option:focus-visible {
+.ui-segmented__option:focus-visible,
+.ui-segmented__option.focus-visible:focus {
     outline: 2px solid var(--ui-accent);
     outline-offset: 2px;
 }
@@ -696,7 +702,8 @@ body {
     box-shadow: 0 0 0 3px var(--ui-accent-glow), 0 2px 12px var(--ui-accent-glow);
 }
 
-.mode-card:focus-visible {
+.mode-card:focus-visible,
+.mode-card.focus-visible:focus {
     outline: 2px solid var(--ui-accent);
     outline-offset: 2px;
 }
@@ -756,7 +763,8 @@ body {
     box-shadow: 0 0 0 1px var(--ui-accent-glow);
 }
 
-.leaderboard-tab:focus-visible {
+.leaderboard-tab:focus-visible,
+.leaderboard-tab.focus-visible:focus {
     outline: 2px solid var(--ui-accent);
     outline-offset: -2px;
 }
@@ -1135,6 +1143,12 @@ body,
 
 .theme-swatch:hover {
     background: var(--ui-glass-highlight);
+}
+
+.theme-swatch:focus-visible,
+.theme-swatch.focus-visible:focus {
+    outline: 2px solid var(--ui-accent);
+    outline-offset: 2px;
 }
 
 .theme-swatch--active {

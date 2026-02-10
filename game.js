@@ -1621,7 +1621,7 @@ class InputHandler {
                 // Active overlay takes priority — treat as confirm/click
                 const navBtns = this.uiManager._getNavigableButtons();
                 if (navBtns.length > 0 && !navBtns.includes(document.activeElement)) {
-                    navBtns[0].focus();
+                    this.uiManager._focusNav(navBtns[0]);
                 }
                 if (document.activeElement && typeof document.activeElement.click === 'function') {
                     document.activeElement.click();
@@ -1631,7 +1631,7 @@ class InputHandler {
             } else if (this.uiManager) {
                 const navBtns = this.uiManager._getNavigableButtons();
                 if (navBtns.length > 0 && !navBtns.includes(document.activeElement)) {
-                    navBtns[0].focus();
+                    this.uiManager._focusNav(navBtns[0]);
                 }
                 if (document.activeElement && typeof document.activeElement.click === 'function') {
                     document.activeElement.click();
@@ -2206,6 +2206,15 @@ class UIManager {
         document.addEventListener('keydown', this._handleMenuKeyDown);
     }
 
+    _focusNav(el) {
+        if (!el) return;
+        el.focus();
+        if (el.classList) {
+            el.classList.add('focus-visible');
+            el.addEventListener('blur', () => el.classList.remove('focus-visible'), { once: true });
+        }
+    }
+
     _getVisibleScreen() {
         // Modals (data-ui) take priority over state screens
         const dataUi = this.container.getAttribute('data-ui');
@@ -2257,7 +2266,7 @@ class UIManager {
                 target = buttons.length > 0 ? buttons[0] : null;
             }
             if (target) {
-                target.focus();
+                this._focusNav(target);
                 this.game.audio.init();
                 this.game.audio.playNavigate();
                 return;
@@ -2273,7 +2282,9 @@ class UIManager {
         if (direction === 'left' || direction === 'right') {
             const delta = direction === 'right' ? 1 : -1;
             const seg = document.activeElement?.closest('.ui-segmented__option');
-            if (seg) this._cycleSegmented(seg, delta);
+            if (seg) { this._cycleSegmented(seg, delta); return; }
+            const swatch = document.activeElement?.closest('.theme-swatch');
+            if (swatch) { this._cycleSiblings(swatch, '.theme-swatch', delta); return; }
             return;
         }
         const buttons = this._getNavigableButtons();
@@ -2285,7 +2296,7 @@ class UIManager {
         } else {
             nextIndex = currentIndex < 0 ? buttons.length - 1 : (currentIndex - 1 + buttons.length) % buttons.length;
         }
-        buttons[nextIndex].focus();
+        this._focusNav(buttons[nextIndex]);
         this.game.audio.init();
         this.game.audio.playNavigate();
     }
@@ -2300,8 +2311,22 @@ class UIManager {
         const next = options[nextIndex];
         if (next.disabled || next.getAttribute('aria-disabled') === 'true') return false;
         next.click();
-        next.focus();
+        this._focusNav(next);
         return true;
+    }
+
+    _cycleSiblings(element, selector, delta) {
+        const parent = element.parentElement;
+        if (!parent) return;
+        const siblings = Array.from(parent.querySelectorAll(selector));
+        const idx = siblings.indexOf(element);
+        if (idx < 0) return;
+        const nextIdx = (idx + delta + siblings.length) % siblings.length;
+        const next = siblings[nextIdx];
+        if (next.disabled || next.getAttribute('aria-disabled') === 'true') return;
+        this._focusNav(next);
+        this.game.audio.init();
+        this.game.audio.playNavigate();
     }
 
     _navigateGrid(direction, gridConfig) {
@@ -2319,7 +2344,7 @@ class UIManager {
                 // Up from below grid → bottom-left card
                 const bottomLeft = cards[Math.min(cols, cards.length - 1)];
                 if (bottomLeft) {
-                    bottomLeft.focus();
+                    this._focusNav(bottomLeft);
                     this.game.audio.init();
                     this.game.audio.playNavigate();
                     return true;
@@ -2327,7 +2352,7 @@ class UIManager {
             }
             if (direction === 'down') {
                 // Down from below grid (wrapping) → top-left card
-                cards[0].focus();
+                this._focusNav(cards[0]);
                 this.game.audio.init();
                 this.game.audio.playNavigate();
                 return true;
@@ -2365,7 +2390,7 @@ class UIManager {
         }
 
         if (target) {
-            target.focus();
+            this._focusNav(target);
             this.game.audio.init();
             this.game.audio.playNavigate();
             return true;
@@ -2398,20 +2423,16 @@ class UIManager {
     _handleMenuKeyDown(e) {
         const dataUi = this.container.getAttribute('data-ui');
 
-        // ArrowLeft / ArrowRight: grid nav if screen has grid, otherwise cycle segmented controls
+        // ArrowLeft / ArrowRight: navigate (grid, segmented, or focus recovery)
         if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
             const screenKey = dataUi || this.game.state;
             const navEntry = SCREEN_NAV[screenKey];
             if (navEntry && navEntry.ownKeyHandler) return;
-            if (navEntry && navEntry.grid) {
-                e.preventDefault();
-                this.navigateMenu(e.key === 'ArrowRight' ? 'right' : 'left');
-                return;
-            }
-            const seg = document.activeElement?.closest('.ui-segmented__option');
-            if (seg && this._cycleSegmented(seg, e.key === 'ArrowRight' ? 1 : -1)) {
-                e.preventDefault();
-            }
+            // Let native inputs (range sliders, text fields) handle LEFT/RIGHT
+            const tag = document.activeElement?.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+            e.preventDefault();
+            this.navigateMenu(e.key === 'ArrowRight' ? 'right' : 'left');
             return;
         }
 

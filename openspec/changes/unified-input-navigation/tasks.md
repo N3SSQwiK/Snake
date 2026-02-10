@@ -37,11 +37,11 @@
 
 ## 7. Integration Testing
 
-- [ ] 7.1 Browser test: Escape key works on every screen (mode-select, settings, leaderboard, shortcuts, PAUSED, GAMEOVER)
-- [ ] 7.2 Browser test: Backspace works on every screen (same as Escape)
-- [ ] 7.3 Browser test: Gamepad Circle works on every screen (same as Escape)
-- [ ] 7.4 Browser test: Mouse click Play → arrow keys navigate mode cards immediately (focus recovery)
-- [ ] 7.5 Browser test: Mouse click Settings → arrow keys navigate settings controls immediately (focus recovery)
-- [ ] 7.6 Browser test: Initials modal submit → focus returns to game over screen correctly
-- [ ] 7.7 Browser test: Escape on PAUSED resumes game (not quit to menu)
-- [ ] 7.8 Browser test: Audio feedback plays consistently across Escape, Backspace, and Circle
+- [x] 7.1 Browser test: Escape key works on every screen (mode-select, settings, leaderboard, shortcuts, PAUSED, GAMEOVER)
+- [x] 7.2 Browser test: Backspace works on every screen (same as Escape)
+- [x] 7.3 Browser test: Gamepad Circle works on every screen (same as Escape)
+- [x] 7.4 Browser test: Mouse click Play → arrow keys navigate mode cards immediately (focus recovery)
+- [x] 7.5 Browser test: Mouse click Settings → arrow keys navigate settings controls immediately (focus recovery)
+- [x] 7.6 Browser test: Initials modal submit → focus returns to game over screen correctly
+- [x] 7.7 Browser test: Escape on PAUSED resumes game (not quit to menu)
+- [x] 7.8 Browser test: Audio feedback plays consistently across Escape, Backspace, and Circle
