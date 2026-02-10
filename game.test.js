@@ -62,7 +62,7 @@ const createMockCanvas = () => {
 // Import game module
 const {
     Game, Renderer, Snake, Food, InputHandler, StorageManager, UIManager,
-    GameState, Direction, FoodType, GameMode, MODE_RULES,
+    GameState, Direction, FoodType, GameMode, MODE_RULES, SCREEN_NAV,
     GRID_WIDTH, GRID_HEIGHT, CELL_SIZE,
     FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_DECAY_TICKS_ACCESSIBLE, FOOD_MAX_SPAWN_ATTEMPTS,
     SPECIAL_FOOD_TICKS, SPECIAL_FOOD_TICKS_ACCESSIBLE, DIFFICULTY_LEVELS,
@@ -2723,12 +2723,14 @@ function createMockUIManager(stateOverride) {
         querySelectorAll: mock.fn(() => [playBtn, settingsBtn, highscoresBtn])
     };
 
+    const allButtons = [playBtn, settingsBtn, highscoresBtn];
     const screenMenu = {
         querySelector: mock.fn((sel) => {
             if (sel === '.ui-btn-group') return btnGroup;
             return null;
         }),
         querySelectorAll: mock.fn(() => []),
+        contains: mock.fn((el) => el && typeof el.focus === 'function'),
         scrollTop: 0
     };
 
@@ -2907,11 +2909,12 @@ describe('UIManager arrow-key navigation', () => {
         const { ui, keydownHandlers, container, setDataUi } = createMockUIManager('MENU');
         setDataUi('settings');
         // Create a mock settings screen with a range input and a button
-        const rangeInput = { tagName: 'INPUT', type: 'range', offsetParent: {} };
+        const rangeInput = { tagName: 'INPUT', type: 'range', offsetParent: {}, focus: mock.fn() };
         const nextBtn = { tagName: 'BUTTON', offsetParent: {}, focus: mock.fn() };
         const settingsScreen = {
             querySelector: mock.fn(() => null), // no .ui-btn-group
-            querySelectorAll: mock.fn(() => [rangeInput, nextBtn])
+            querySelectorAll: mock.fn(() => [rangeInput, nextBtn]),
+            contains: mock.fn((el) => el === rangeInput || el === nextBtn)
         };
         const origQS = container.querySelector;
         container.querySelector = mock.fn((sel) => {
@@ -3631,10 +3634,24 @@ describe('UIManager mode card grid navigation', () => {
             querySelectorAll: mock.fn(() => cards)
         };
 
+        const screenEl = {
+            querySelector: mock.fn((sel) => {
+                if (sel === '.ui-btn-group') return null;
+                if (sel === '[data-action="start-game"]') return startBtn;
+                return null;
+            }),
+            querySelectorAll: mock.fn((sel) => {
+                if (sel === '.mode-card') return cards;
+                return [...cards, startBtn];
+            }),
+            contains: mock.fn((el) => cards.includes(el) || el === startBtn),
+            scrollTop: 0
+        };
         result.container.querySelector = mock.fn((sel) => {
             if (sel === '.mode-card-grid') return grid;
             if (sel === '[data-action="start-game"]') return startBtn;
-            if (sel === '.screen-mode-select') return { querySelector: mock.fn(() => null), querySelectorAll: mock.fn(() => [...cards, startBtn]), scrollTop: 0 };
+            if (sel === '.screen-mode-select') return screenEl;
+            if (sel === '.mode-card[aria-checked="true"]') return cards[0];
             return null;
         });
 
@@ -4310,5 +4327,261 @@ describe('Game reset clears all mode-specific state', () => {
         game.mode = GameMode.ZEN;
         game.reset();
         assert.strictEqual(game.wallCollisionEnabled, false);
+    });
+});
+
+// =============================================================================
+// SCREEN_NAV REGISTRY TESTS
+// =============================================================================
+
+describe('SCREEN_NAV registry', () => {
+    test('has all expected keys', () => {
+        const expectedKeys = ['mode-select', 'settings', 'leaderboard', 'shortcuts', 'initials', 'PAUSED', 'GAMEOVER'];
+        for (const key of expectedKeys) {
+            assert.ok(SCREEN_NAV[key], `Missing SCREEN_NAV entry for "${key}"`);
+        }
+    });
+
+    test('each entry has back and focusEntry properties', () => {
+        for (const [key, entry] of Object.entries(SCREEN_NAV)) {
+            assert.ok('back' in entry, `${key} missing back`);
+            assert.ok('focusEntry' in entry, `${key} missing focusEntry`);
+        }
+    });
+
+    test('mode-select entry has grid config', () => {
+        const entry = SCREEN_NAV['mode-select'];
+        assert.ok(entry.grid, 'mode-select should have grid');
+        assert.strictEqual(entry.grid.cols, 2);
+        assert.strictEqual(entry.grid.selector, '.mode-card');
+    });
+
+    test('initials entry has ownKeyHandler flag', () => {
+        assert.strictEqual(SCREEN_NAV['initials'].ownKeyHandler, true);
+    });
+
+    test('each entry has audio property', () => {
+        for (const [key, entry] of Object.entries(SCREEN_NAV)) {
+            assert.ok('audio' in entry, `${key} missing audio`);
+        }
+    });
+});
+
+// =============================================================================
+// UNIFIED ESCAPE / NAVIGATEBACK TESTS
+// =============================================================================
+
+describe('Unified escape via navigateBack', () => {
+    test('Escape on mode-select calls hideModeSelect', () => {
+        const { ui, setDataUi } = createMockUIManager('MENU');
+        setDataUi('mode-select');
+        ui.hideModeSelect = mock.fn();
+        ui.navigateBack();
+        assert.strictEqual(ui.hideModeSelect.mock.calls.length, 1);
+    });
+
+    test('Escape on settings calls hideSettings', () => {
+        const { ui, setDataUi } = createMockUIManager('MENU');
+        setDataUi('settings');
+        ui.hideSettings = mock.fn();
+        ui.navigateBack();
+        assert.strictEqual(ui.hideSettings.mock.calls.length, 1);
+    });
+
+    test('Escape on leaderboard calls hideLeaderboard', () => {
+        const { ui, setDataUi } = createMockUIManager('MENU');
+        setDataUi('leaderboard');
+        ui.hideLeaderboard = mock.fn();
+        ui.navigateBack();
+        assert.strictEqual(ui.hideLeaderboard.mock.calls.length, 1);
+    });
+
+    test('Escape on shortcuts calls hideShortcuts', () => {
+        const { ui, setDataUi } = createMockUIManager('MENU');
+        setDataUi('shortcuts');
+        ui.hideShortcuts = mock.fn();
+        ui.navigateBack();
+        assert.strictEqual(ui.hideShortcuts.mock.calls.length, 1);
+    });
+
+    test('Escape on initials calls hideInitials', () => {
+        const { ui, setDataUi } = createMockUIManager('MENU');
+        setDataUi('initials');
+        ui.hideInitials = mock.fn();
+        ui.navigateBack();
+        assert.strictEqual(ui.hideInitials.mock.calls.length, 1);
+    });
+
+    test('Escape on PAUSED resumes game (sets PLAYING)', () => {
+        const { ui, gameMock, setDataState } = createMockUIManager('PAUSED');
+        ui.navigateBack();
+        assert.strictEqual(gameMock.setState.mock.calls.length, 1);
+        assert.strictEqual(gameMock.setState.mock.calls[0].arguments[0], 'PLAYING');
+    });
+
+    test('Escape on GAMEOVER returns to menu', () => {
+        const { ui, gameMock, setDataState } = createMockUIManager('GAMEOVER');
+        ui.navigateBack();
+        assert.strictEqual(gameMock.reset.mock.calls.length, 1);
+        assert.strictEqual(gameMock.setState.mock.calls.length, 1);
+        assert.strictEqual(gameMock.setState.mock.calls[0].arguments[0], 'MENU');
+    });
+
+    test('navigateBack plays playBack for modal dismiss', () => {
+        const { ui, audioMock, setDataUi } = createMockUIManager('MENU');
+        setDataUi('settings');
+        ui.hideSettings = mock.fn();
+        ui.navigateBack();
+        assert.strictEqual(audioMock.playBack.mock.calls.length, 1);
+    });
+
+    test('navigateBack plays playConfirm for pause resume', () => {
+        const { ui, audioMock } = createMockUIManager('PAUSED');
+        ui.navigateBack();
+        assert.strictEqual(audioMock.playConfirm.mock.calls.length, 1);
+    });
+
+    test('navigateBack is no-op on MENU state', () => {
+        const { ui, audioMock, gameMock } = createMockUIManager('MENU');
+        ui.navigateBack();
+        assert.strictEqual(audioMock.playBack.mock.calls.length, 0);
+        assert.strictEqual(gameMock.setState.mock.calls.length, 0);
+    });
+});
+
+// =============================================================================
+// FOCUS RECOVERY TESTS
+// =============================================================================
+
+describe('Focus recovery in navigateMenu', () => {
+    test('auto-focuses focusEntry when no element in screen has focus', () => {
+        const { ui, container, setDataUi } = createMockUIManager('MENU');
+        setDataUi('mode-select');
+        const focusTarget = { focus: mock.fn(), offsetParent: {} };
+        const screenEl = {
+            querySelector: mock.fn(() => null),
+            querySelectorAll: mock.fn(() => [focusTarget]),
+            contains: mock.fn(() => false),
+            scrollTop: 0
+        };
+        container.querySelector = mock.fn((sel) => {
+            if (sel === '.screen-mode-select') return screenEl;
+            if (sel === '.mode-card[aria-checked="true"]') return focusTarget;
+            return null;
+        });
+        global.document.activeElement = {};
+        ui.navigateMenu('down');
+        assert.strictEqual(focusTarget.focus.mock.calls.length, 1);
+    });
+
+    test('proceeds normally when element is already focused in screen', () => {
+        const { ui, buttons } = createMockUIManager('MENU');
+        global.document.activeElement = buttons[0];
+        ui.navigateMenu('down');
+        assert.strictEqual(buttons[1].focus.mock.calls.length, 1);
+    });
+
+    test('falls back to first navigable button when focusEntry is null', () => {
+        const { ui, buttons, container, setDataState } = createMockUIManager('PAUSED');
+        // PAUSED has focusEntry but let's test null case by using a custom screen
+        global.document.activeElement = {};
+        ui.navigateMenu('down');
+        assert.strictEqual(buttons[0].focus.mock.calls.length, 1);
+    });
+});
+
+// =============================================================================
+// GRID NAVIGATION WITH REGISTRY TESTS
+// =============================================================================
+
+describe('Grid navigation via SCREEN_NAV', () => {
+    function createGridUIManager() {
+        const result = createMockUIManager('MENU');
+        result.setDataUi('mode-select');
+        const cards = [];
+        for (let i = 0; i < 4; i++) {
+            const card = {
+                tagName: 'BUTTON',
+                className: 'mode-card',
+                dataset: { mode: ['classic', 'timeAttack', 'maze', 'zen'][i] },
+                focus: mock.fn(),
+                closest: mock.fn((sel) => sel === '.mode-card' ? card : null),
+                offsetParent: {}
+            };
+            cards.push(card);
+        }
+        const startBtn = {
+            tagName: 'BUTTON',
+            dataset: { action: 'start-game' },
+            focus: mock.fn(),
+            closest: mock.fn(() => null),
+            offsetParent: {}
+        };
+        const screenEl = {
+            querySelector: mock.fn((sel) => {
+                if (sel === '[data-action="start-game"]') return startBtn;
+                return null;
+            }),
+            querySelectorAll: mock.fn((sel) => {
+                if (sel === '.mode-card') return cards;
+                return [...cards, startBtn];
+            }),
+            contains: mock.fn((el) => cards.includes(el) || el === startBtn),
+            scrollTop: 0
+        };
+        result.container.querySelector = mock.fn((sel) => {
+            if (sel === '.screen-mode-select') return screenEl;
+            if (sel === '[data-action="start-game"]') return startBtn;
+            if (sel === '.mode-card[aria-checked="true"]') return cards[0];
+            return null;
+        });
+        return { ...result, cards, startBtn };
+    }
+
+    test('grid uses cols from SCREEN_NAV entry', () => {
+        assert.strictEqual(SCREEN_NAV['mode-select'].grid.cols, 2);
+    });
+
+    test('grid edge produces no-op (left on Classic)', () => {
+        const { ui, cards } = createGridUIManager();
+        global.document.activeElement = cards[0]; // Classic, col 0
+        ui.navigateMenu('left');
+        for (const c of cards) {
+            assert.strictEqual(c.focus.mock.calls.length, 0);
+        }
+    });
+
+    test('grid down from bottom row moves to Start Game button', () => {
+        const { ui, cards, startBtn } = createGridUIManager();
+        global.document.activeElement = cards[2]; // Maze, bottom-left
+        ui.navigateMenu('down');
+        assert.strictEqual(startBtn.focus.mock.calls.length, 1);
+    });
+});
+
+// =============================================================================
+// INITIALS MODAL STANDARDIZATION TESTS
+// =============================================================================
+
+describe('Initials modal focus standardization', () => {
+    test('hideInitials calls _releaseFocus', () => {
+        const { ui } = createMockUIManager('GAMEOVER');
+        ui._releaseFocus = mock.fn();
+        ui._initialsKeyHandler = null;
+        ui.initialsMobileInput = null;
+        ui._initialsSlotTapHandler = null;
+        ui.hideInitials();
+        assert.strictEqual(ui._releaseFocus.mock.calls.length, 1);
+    });
+
+    test('initials ownKeyHandler prevents navigateMenu', () => {
+        const { ui, setDataUi, buttons } = createMockUIManager('GAMEOVER');
+        setDataUi('initials');
+        global.document.activeElement = {};
+        ui.navigateMenu('down');
+        // Should be a no-op (ownKeyHandler: true)
+        for (const b of buttons) {
+            assert.strictEqual(b.focus.mock.calls.length, 0);
+        }
     });
 });

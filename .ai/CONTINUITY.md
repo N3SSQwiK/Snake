@@ -1,39 +1,41 @@
 # Continuity
 
 ## Summary
-Browser-based snake game with vanilla JS, canvas rendering, class-based architecture. Extended input methods shipped (PR #54 merged). 8 openspec changes queued with prioritized implementation order.
+Browser-based snake game with vanilla JS, canvas rendering, class-based architecture. Game modes shipped (PR #55 merged, archived). Navigation fragmentation identified — unified-input-navigation spec'd and ready for implementation. 10 openspec changes queued with revised priority order.
 
 ## Completed
-- Extended input methods (PR #54, merged): gamepad support (DualSense tested), virtual D-pad, mobile Swipe/D-Pad selector, UIManager navigateMenu/navigateBack, gamepad initials entry, hold-to-repeat, post-initials focus
-- PR review fixes: swipe gating in D-pad mode, Cross button overlay routing
+- Game modes (PR #55, merged, archived): Classic, Time Attack, Maze, Zen + mode selection card screen + 2D grid nav + HUD visibility fix
+- Extended input methods (PR #54, merged): gamepad support, virtual D-pad, mobile Swipe/D-Pad selector, gamepad initials entry
 - Settings previews (PR #53, merged), accessibility (PR #45, merged), audio system (PR #44, merged)
-- All prior openspec changes archived and synced (including add-extended-input → input-handling spec)
+- All prior openspec changes archived and synced (including add-game-modes → game-modes + leaderboard specs)
 
 ## Implementation Priority
-Order based on: core gameplay → engagement loops → cosmetics → polish → infrastructure-heavy
+Order based on: infrastructure first (horizontal concerns before vertical), least rework, best app delivery.
 
-1. **add-game-modes** — Biggest value-add, expands core loop, gives everything else more surface area
-2. **add-achievements** — Engagement hooks, player goals. Benefits from game modes (mode-specific achievements)
-3. **add-snake-skins** — Cosmetic rewards, ties into achievements as unlocks
-4. **add-daily-challenge** — Daily engagement driver. Better with game modes (rotate challenge types). No backend needed
-5. **add-replay-system** — Shareable moments. Nice but not critical
-6. **add-dualsense-enhancements** — Polish for niche audience (DualSense + Chromium). Basic gamepad already works
-7. **add-local-multiplayer** — Big architectural lift (two snakes, inter-snake collision). Solo experience should be rich first
-8. **add-online-leaderboards** — Requires backend infrastructure. Highest risk/dependency. Last
+1. **unified-input-navigation** — Navigation infrastructure. Consolidates fragmented escape/back handlers, per-screen navigation contracts, focus recovery on mouse→keyboard/gamepad transitions. Every subsequent screen/UI change benefits. **All 4 artifacts complete, 27 tasks across 7 groups. Ready for implementation.**
+2. **responsive-layout** — Layout infrastructure. Responsive scaling for all screen sizes. Must land before new UI features to avoid retrofitting. All 4 artifacts complete, 30 tasks.
+3. **leaderboard-pages** — Feature. Pagination for leaderboard display. Builds on stable navigation contracts + responsive layout. All 4 artifacts complete, 18 tasks.
+4. **add-dualsense-enhancements** — Polish. Advanced DualSense features (haptics, LED). Benefits from unified navigation being solid. Proposal only (1/4 artifacts).
 
-All 8 changes have proposals only (no design/specs/tasks yet), except add-game-modes (4/4 artifacts, ready for implementation) and add-dualsense-enhancements (1/4 artifacts, proposal done).
+### Backlog (proposals only, not yet prioritized)
+- add-achievements, add-snake-skins, add-daily-challenge, add-replay-system, add-local-multiplayer, add-online-leaderboards
+
+## Known Issues
+- Escape key doesn't work on mode-select screen (tracked in unified-input-navigation)
+- Mouse→keyboard/gamepad focus recovery broken on all screens (tracked in unified-input-navigation)
+- Escape on PAUSED quits to menu vs Circle resumes — inconsistent (tracked in unified-input-navigation)
 
 ## Key Files
-- `game.js` - All game code (~3700 lines)
-- `game.test.js` - 327 unit tests
-- `openspec/changes/` - 8 active changes + archive
+- `game.js` - All game code (~4200 lines)
+- `game.test.js` - 403 unit tests
+- `openspec/changes/` - 10 active changes + archive
 
 ## Context
 - GitHub project board: N3SSQwiK/projects/4
 - openspec `config.yaml` rules field parser bug (warns "must be array of strings") — harmless
 
 ## Suggested Prompt
-> Start implementing game modes: `/opsx:apply add-game-modes` — all artifacts complete (47 tasks across 10 groups). Create feature branch first.
+> Start implementing unified navigation: `/opsx:apply unified-input-navigation` — all artifacts complete (27 tasks across 7 groups). Create feature branch first.
 
 ## Source
 Claude Code | 2026-02-10

@@ -389,6 +389,52 @@ const MODE_RULES = {
 };
 
 // =============================================================================
+// SCREEN NAVIGATION REGISTRY
+// =============================================================================
+// Per-screen navigation contracts: back action, focus entry point, grid layout.
+// Keys are data-ui values (modal overlays) or GameState names (state screens).
+
+const SCREEN_NAV = {
+    'mode-select': {
+        back: 'hideModeSelect',
+        focusEntry: '.mode-card[aria-checked="true"]',
+        grid: { cols: 2, selector: '.mode-card' },
+        audio: 'playBack'
+    },
+    'settings': {
+        back: 'hideSettings',
+        focusEntry: '.screen-settings .ui-btn-close',
+        audio: 'playBack'
+    },
+    'leaderboard': {
+        back: 'hideLeaderboard',
+        focusEntry: '.screen-leaderboard .ui-btn-close',
+        audio: 'playBack'
+    },
+    'shortcuts': {
+        back: 'hideShortcuts',
+        focusEntry: '.screen-shortcuts .ui-btn-close',
+        audio: 'playBack'
+    },
+    'initials': {
+        back: 'hideInitials',
+        focusEntry: null,
+        ownKeyHandler: true,
+        audio: 'playBack'
+    },
+    [GameState.PAUSED]: {
+        back: '_resumeFromBack',
+        focusEntry: '.screen-pause .ui-btn',
+        audio: 'playConfirm'
+    },
+    [GameState.GAMEOVER]: {
+        back: '_menuFromBack',
+        focusEntry: '.screen-gameover .ui-btn',
+        audio: 'playBack'
+    }
+};
+
+// =============================================================================
 // AUDIO MANAGER CLASS
 // =============================================================================
 
@@ -1413,9 +1459,9 @@ class InputHandler {
                 this.actionCallbacks.pause();
                 return;
             }
-            if (event.key === 'Escape' && this.actionCallbacks.escape) {
+            if (event.key === 'Escape') {
                 event.preventDefault();
-                this.actionCallbacks.escape();
+                if (this.uiManager) this.uiManager.navigateBack();
                 return;
             }
         }
@@ -2191,10 +2237,36 @@ class UIManager {
     }
 
     navigateMenu(direction) {
-        // Mode card grid: 2D directional navigation
         const dataUi = this.container.getAttribute('data-ui');
-        if (dataUi === 'mode-select') {
-            this._navigateModeCardGrid(direction);
+        const screenKey = dataUi || this.game.state;
+        const navEntry = SCREEN_NAV[screenKey];
+
+        // Skip screens that manage their own key handling (e.g., initials)
+        if (navEntry && navEntry.ownKeyHandler) return;
+
+        // Focus recovery: if no element in current screen has focus, auto-focus entry point
+        const screen = this._getVisibleScreen();
+        const screenHasFocus = screen && typeof screen.contains === 'function'
+            && screen.contains(document.activeElement);
+        if (screen && !screenHasFocus) {
+            const focusSelector = navEntry && navEntry.focusEntry;
+            let target = focusSelector ? this.container.querySelector(focusSelector) : null;
+            if (target && target.offsetParent === null) target = null; // hidden
+            if (!target) {
+                const buttons = this._getNavigableButtons();
+                target = buttons.length > 0 ? buttons[0] : null;
+            }
+            if (target) {
+                target.focus();
+                this.game.audio.init();
+                this.game.audio.playNavigate();
+                return;
+            }
+        }
+
+        // Grid navigation: delegate to grid navigator if screen declares a grid
+        if (navEntry && navEntry.grid) {
+            this._navigateGrid(direction, navEntry.grid);
             return;
         }
 
@@ -2232,13 +2304,14 @@ class UIManager {
         return true;
     }
 
-    _navigateModeCardGrid(direction) {
-        const grid = this.container.querySelector('.mode-card-grid');
-        if (!grid) return false;
-        const cards = Array.from(grid.querySelectorAll('.mode-card'));
+    _navigateGrid(direction, gridConfig) {
+        const { cols, selector } = gridConfig;
+        const screen = this._getVisibleScreen();
+        if (!screen) return false;
+        const cards = Array.from(screen.querySelectorAll(selector));
         if (cards.length === 0) return false;
-        const focusedCard = document.activeElement?.closest('.mode-card');
-        const cols = 2;
+        const focusedCard = document.activeElement?.closest(selector);
+
 
         // If focus is not on a card (e.g. Start Game button), jump into the grid
         if (!focusedCard) {
@@ -2302,49 +2375,35 @@ class UIManager {
 
     navigateBack() {
         const dataUi = this.container.getAttribute('data-ui');
-        if (dataUi === 'shortcuts') {
-            this.hideShortcuts();
-            return;
-        }
-        if (dataUi === 'mode-select') {
-            this.game.audio.playBack();
-            this.hideModeSelect();
-            return;
-        }
-        if (dataUi === 'leaderboard') {
-            this.game.audio.playBack();
-            this.hideLeaderboard();
-            return;
-        }
-        if (dataUi === 'settings') {
-            this.game.audio.playBack();
-            this.hideSettings();
-            return;
-        }
+        const key = dataUi || this.game.state;
+        const entry = SCREEN_NAV[key];
+        if (!entry) return; // Unknown screen: no-op
 
-        // No modal open — act on game state
-        const state = this.game.state;
-        if (state === GameState.PAUSED) {
-            this.game.audio.playConfirm();
-            this.game.setState(GameState.PLAYING);
-            return;
+        if (entry.audio) {
+            this.game.audio.init();
+            this.game.audio[entry.audio]();
         }
-        if (state === GameState.GAMEOVER) {
-            this.game.audio.playBack();
-            this.game.reset();
-            this.game.setState(GameState.MENU);
-            return;
-        }
-        // MENU / PLAYING: no-op
+        this[entry.back]();
+    }
+
+    _resumeFromBack() {
+        this.game.setState(GameState.PLAYING);
+    }
+
+    _menuFromBack() {
+        this.game.reset();
+        this.game.setState(GameState.MENU);
     }
 
     _handleMenuKeyDown(e) {
         const dataUi = this.container.getAttribute('data-ui');
 
-        // ArrowLeft / ArrowRight: cycle segmented controls (or 2D grid nav for mode cards)
+        // ArrowLeft / ArrowRight: grid nav if screen has grid, otherwise cycle segmented controls
         if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-            if (dataUi === 'initials') return;
-            if (dataUi === 'mode-select') {
+            const screenKey = dataUi || this.game.state;
+            const navEntry = SCREEN_NAV[screenKey];
+            if (navEntry && navEntry.ownKeyHandler) return;
+            if (navEntry && navEntry.grid) {
                 e.preventDefault();
                 this.navigateMenu(e.key === 'ArrowRight' ? 'right' : 'left');
                 return;
@@ -2358,8 +2417,9 @@ class UIManager {
 
         // ArrowUp / ArrowDown: cycle focus between buttons
         if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-            // Skip when initials modal is open (has its own arrow handler)
-            if (dataUi === 'initials') return;
+            const screenKey2 = dataUi || this.game.state;
+            const navEntry2 = SCREEN_NAV[screenKey2];
+            if (navEntry2 && navEntry2.ownKeyHandler) return;
             e.preventDefault();
             this.navigateMenu(e.key === 'ArrowDown' ? 'down' : 'up');
             return;
@@ -2367,8 +2427,9 @@ class UIManager {
 
         // Backspace / Delete: navigate back
         if (e.key === 'Backspace' || e.key === 'Delete') {
-            // Skip when initials modal is open or active element is an input
-            if (dataUi === 'initials') return;
+            const screenKey3 = dataUi || this.game.state;
+            const navEntry3 = SCREEN_NAV[screenKey3];
+            if (navEntry3 && navEntry3.ownKeyHandler) return;
             const tag = document.activeElement ? document.activeElement.tagName : '';
             if (tag === 'INPUT' || tag === 'TEXTAREA') return;
             e.preventDefault();
@@ -2768,9 +2829,6 @@ class UIManager {
     }
 
     showInitials(score, storage) {
-        // Store previously focused element for restoration
-        this._initialsPrevFocus = document.activeElement;
-
         this._initialsScore = score;
         this._initialsStorage = storage;
         this._initialsChars = [0, 0, 0];
@@ -2780,8 +2838,9 @@ class UIManager {
         this._renderInitialsSlots();
 
         this.container.setAttribute('data-ui', 'initials');
+        this._trapFocus('.screen-initials');
 
-        // Focus first slot for accessibility
+        // Focus first slot (overrides _trapFocus default focus target)
         requestAnimationFrame(() => {
             const firstSlot = this.initialsSlots[0];
             if (firstSlot) firstSlot.focus();
@@ -2853,14 +2912,7 @@ class UIManager {
             this._initialsSlotTapHandler = null;
         }
 
-        // Focus first navigable button on the gameover screen
-        this._initialsPrevFocus = null;
-        requestAnimationFrame(() => {
-            const buttons = this._getNavigableButtons();
-            if (buttons.length > 0) {
-                buttons[0].focus();
-            }
-        });
+        this._releaseFocus();
     }
 
     _renderInitialsSlots() {
@@ -3990,31 +4042,6 @@ if (typeof document !== 'undefined') {
             }
         });
 
-        game.inputHandler.onAction('escape', () => {
-            // Close modal overlays first
-            const activeUi = container.getAttribute('data-ui');
-            if (activeUi === 'leaderboard') {
-                game.ui.hideLeaderboard();
-                return;
-            }
-            if (activeUi === 'settings') {
-                game.ui.hideSettings();
-                return;
-            }
-            if (activeUi === 'shortcuts') {
-                game.ui.hideShortcuts();
-                return;
-            }
-            if (activeUi === 'initials') {
-                return; // Handled by its own keydown listener
-            }
-
-            if (game.state === GameState.PAUSED || game.state === GameState.GAMEOVER) {
-                game.reset();
-                game.setState(GameState.MENU);
-            }
-        });
-
         // Show keyboard shortcuts with ? key
         document.addEventListener('keydown', (e) => {
             // Only trigger on ? (Shift + / or ?) key, not when typing in inputs
@@ -4192,7 +4219,7 @@ if (typeof document !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         Game, Renderer, Snake, Food, InputHandler, StorageManager, UIManager, AudioManager,
-        GameState, Direction, FoodType, GameMode, MODE_RULES,
+        GameState, Direction, FoodType, GameMode, MODE_RULES, SCREEN_NAV,
         GRID_WIDTH, GRID_HEIGHT, CELL_SIZE,
         FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_DECAY_TICKS_ACCESSIBLE, FOOD_MAX_SPAWN_ATTEMPTS,
         SPECIAL_FOOD_TICKS, SPECIAL_FOOD_TICKS_ACCESSIBLE, DIFFICULTY_LEVELS,
