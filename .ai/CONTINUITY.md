@@ -1,71 +1,39 @@
 # Continuity
 
 ## Summary
-Browser-based snake game with vanilla JS, canvas rendering, class-based architecture. Two feature branches in progress: audio system and accessibility, both with draft PRs awaiting review.
+Browser-based snake game with vanilla JS, canvas rendering, class-based architecture. Extended input methods shipped (PR #54 merged). 8 openspec changes queued with prioritized implementation order.
 
 ## Completed
-- Difficulty system (PR #43, merged): 3 levels, progressive speed, wall collision, food types, proximity spawning, toxic segment removal
-- Food types: regular (apple), bonus (star), toxic (diamond), lethal (skull) with distinct shapes
-- HTML HUD above canvas: score, length, difficulty, toxic penalty info
-- Grid 25x25, difficulty-scoped leaderboard, landscape rotation overlay
-- Animation toggle, theme system with unlocks
+- Extended input methods (PR #54, merged): gamepad support (DualSense tested), virtual D-pad, mobile Swipe/D-Pad selector, UIManager navigateMenu/navigateBack, gamepad initials entry, hold-to-repeat, post-initials focus
+- PR review fixes: swipe gating in D-pad mode, Cross button overlay routing
+- Settings previews (PR #53, merged), accessibility (PR #45, merged), audio system (PR #44, merged)
+- All prior openspec changes archived and synced (including add-extended-input → input-handling spec)
 
-## In Progress
+## Implementation Priority
+Order based on: core gameplay → engagement loops → cosmetics → polish → infrastructure-heavy
 
-### PR #44: Audio System (Draft)
-**Branch**: `feature/add-audio-system`
-**Progress**: 31/37 tasks (remaining are manual testing)
+1. **add-game-modes** — Biggest value-add, expands core loop, gives everything else more surface area
+2. **add-achievements** — Engagement hooks, player goals. Benefits from game modes (mode-specific achievements)
+3. **add-snake-skins** — Cosmetic rewards, ties into achievements as unlocks
+4. **add-daily-challenge** — Daily engagement driver. Better with game modes (rotate challenge types). No backend needed
+5. **add-replay-system** — Shareable moments. Nice but not critical
+6. **add-dualsense-enhancements** — Polish for niche audience (DualSense + Chromium). Basic gamepad already works
+7. **add-local-multiplayer** — Big architectural lift (two snakes, inter-snake collision). Solo experience should be rich first
+8. **add-online-leaderboards** — Requires backend infrastructure. Highest risk/dependency. Last
 
-Implemented:
-- AudioManager class with Web Audio API procedural sounds
-- Gameplay sounds: eat, bonus eat, toxic eat, poison appear/disappear, game over
-- Achievement sounds: high score fanfare, theme unlock
-- UI sounds: navigate, confirm, back
-- Volume slider (0-100%) and mute toggle in settings
-- Settings persist to localStorage
-
-### PR #45: Accessibility (Draft)
-**Branch**: `feature/add-accessibility`
-**Progress**: 37/48 tasks
-
-Implemented:
-- Focus trapping in modals with focus restoration on close
-- Keyboard shortcuts help modal (? key)
-- Shape Outlines toggle (colorblind mode) - white borders on food
-- Extended Time Mode toggle - slower speed + no food expiry
-- WCAG 2.3.1 flash rate compliance documented
-- aria-modal on dialogs, tabindex on initials slots
-
-Remaining:
-- Color contrast audit (needs axe/Lighthouse)
-- Custom keybindings (complex, deferred)
-- Manual accessibility testing
-
-## Blocked
-None
+All 8 changes have proposals only (no design/specs/tasks yet), except add-game-modes (4/4 artifacts, ready for implementation) and add-dualsense-enhancements (1/4 artifacts, proposal done).
 
 ## Key Files
-- `game.js` - All game code (~2600 lines): Game, Snake, Food, Renderer, InputHandler, UIManager, StorageManager, AudioManager
-- `game.test.js` - Unit tests
-- `styles.css` - Glassmorphism UI, HUD, keyboard shortcuts modal
-- `index.html` - HUD, settings with audio/accessibility toggles, shortcuts modal
-- `openspec/changes/add-audio-system/` - Audio proposal and tasks
-- `openspec/changes/add-accessibility/` - Accessibility proposal and tasks
+- `game.js` - All game code (~3700 lines)
+- `game.test.js` - 327 unit tests
+- `openspec/changes/` - 8 active changes + archive
 
 ## Context
-- Single-file architecture, no build step, 25x25 grid at 20px cells
-- Both feature branches pushed to origin with draft PRs
-- Worktrees cleaned up (were at ~/Snake-audio and ~/Snake-accessibility)
 - GitHub project board: N3SSQwiK/projects/4
+- openspec `config.yaml` rules field parser bug (warns "must be array of strings") — harmless
 
 ## Suggested Prompt
-> Review and test the two draft PRs:
-> 1. PR #44 (audio): Test volume slider, mute toggle, all gameplay/UI sounds
-> 2. PR #45 (accessibility): Test focus trapping, ? key shortcuts, Shape Outlines toggle, Extended Time Mode
->
-> After testing, mark PRs ready for review. Consider running Lighthouse accessibility audit for PR #45.
->
-> Remaining openspec changes available: add-extended-input (31 tasks), add-powerup-system, add-multiplayer-local.
+> Start implementing game modes: `/opsx:apply add-game-modes` — all artifacts complete (47 tasks across 10 groups). Create feature branch first.
 
 ## Source
-Claude Code | 2026-02-04
+Claude Code | 2026-02-10
