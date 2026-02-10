@@ -1420,8 +1420,8 @@ class InputHandler {
         const dataUi = this.uiManager && this.uiManager.container
             ? this.uiManager.container.getAttribute('data-ui') : null;
         if (dataUi === 'initials' && this.uiManager) {
-            if (justPressed(12)) this.uiManager._cycleInitialsChar(1);   // D-pad up: next letter
-            if (justPressed(13)) this.uiManager._cycleInitialsChar(-1);  // D-pad down: prev letter
+            if (justPressed(12)) this.uiManager._cycleInitialsChar(-1);  // D-pad up: prev letter (Z→Y→X)
+            if (justPressed(13)) this.uiManager._cycleInitialsChar(1);   // D-pad down: next letter (A→B→C)
             if (justPressed(14)) this.uiManager._moveInitialsSlot(-1);   // D-pad left: prev slot
             if (justPressed(15)) this.uiManager._moveInitialsSlot(1);    // D-pad right: next slot
             if (justPressed(0)) this.uiManager._submitInitials();        // Cross: submit
