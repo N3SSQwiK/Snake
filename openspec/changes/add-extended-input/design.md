@@ -11,16 +11,16 @@ The game loop runs at 60fps via `requestAnimationFrame`, with fixed-timestep tic
 ## Goals / Non-Goals
 
 **Goals:**
-- Add virtual D-pad and tap-zone input for mobile (alternatives to swipe)
+- Add virtual D-pad input for mobile (alternative to swipe)
 - Add gamepad support using the standard Gamepad API (PS4/PS5/Xbox/generic)
-- Gamepad works for both gameplay (D-pad directions) and menu navigation (D-pad focus cycling, Cross confirm, Circle back)
+- Gamepad works for gameplay (D-pad directions), menu navigation (D-pad focus cycling, Cross confirm, Circle back), and initials entry (D-pad cycles letters/slots, Cross submit, Circle cancel)
 - All new input sources reuse existing `queueDirection()` pipeline and `_handleMenuKeyDown` action patterns
 - Audio feedback for gamepad menu interactions (same sounds as keyboard nav)
 - Mobile input method selection persisted in settings
 
 **Non-Goals:**
 - Analog stick input (D-pad only — analog sticks have dead-zone complexity not worth adding for a grid-based game)
-- Haptic/rumble feedback via DualSense (requires non-standard API, limited browser support)
+- Haptic/rumble feedback via DualSense (separate change: add-dualsense-enhancements)
 - Gamepad button remapping UI
 - Multi-gamepad support (single gamepad, index 0)
 
@@ -40,45 +40,46 @@ The game loop runs at 60fps via `requestAnimationFrame`, with fixed-timestep tic
 
 **Implementation:** `InputHandler.pollGamepad()` detects button presses (rising-edge only) and:
 - During PLAYING: D-pad calls `queueDirection()`, Cross/Options calls `actionCallbacks.pause`
-- During menus: D-pad calls `UIManager.navigateMenu(direction)` (new public method extracting the arrow-key logic from `_handleMenuKeyDown`), Cross calls `.click()` on `document.activeElement`, Circle calls `UIManager.navigateBack()` (new public method extracting the Backspace logic)
+- During menus: D-pad calls `UIManager.navigateMenu(direction)` (public method extracted from `_handleMenuKeyDown`), Cross calls `.click()` on `document.activeElement`, Circle calls `UIManager.navigateBack()` (public method extracted from `_handleMenuKeyDown`)
+- During initials entry: D-pad up/down calls `_cycleInitialsChar()`, D-pad left/right calls `_moveInitialsSlot()`, Cross calls `_submitInitials()`, Circle calls `hideInitials()`
 
-**Rationale:** Extracting `navigateMenu()` and `navigateBack()` from `_handleMenuKeyDown` avoids duplicating menu navigation logic. Both keyboard and gamepad call the same methods. Audio feedback comes for free since it's inside those methods.
+**Rationale:** Extracting `navigateMenu()`, `navigateBack()`, `_cycleInitialsChar()`, and `_moveInitialsSlot()` from their respective keyboard handlers avoids duplicating logic. Both keyboard and gamepad call the same methods. Audio feedback comes for free since it's inside those methods.
 
 **Alternative considered:** Dispatching synthetic KeyboardEvents — rejected because it's fragile (depends on event propagation) and harder to test.
 
 ### Decision 3: Mobile input method as segmented selector
 
-**Choice:** Add a "Controls" setting group (visible only on coarse-pointer devices) with a 3-option segmented selector: Swipe (default) / D-Pad / Tap Zones.
+**Choice:** Add a "Controls" setting group (visible only on coarse-pointer devices) with a 2-option segmented selector: Swipe (default) / D-Pad.
 
 **Rationale:** Matches the existing Difficulty segmented selector pattern. Segmented selectors are already styled and accessible (role="radiogroup"). Hiding the entire group on desktop avoids confusion since these controls are touch-only.
 
-**StorageManager key:** `mobileInput` with values `'swipe'` | `'dpad'` | `'tapzone'`, default `'swipe'`.
+**StorageManager key:** `mobileInput` with values `'swipe'` | `'dpad'`, default `'swipe'`.
 
 ### Decision 4: D-pad rendering approach
 
-**Choice:** HTML overlay buttons positioned absolute over the canvas, styled with glassmorphism variables.
+**Choice:** HTML buttons positioned below the canvas in normal document flow, centered, styled with glassmorphism variables.
 
-**Rationale:** HTML buttons get free accessibility (focusable, labelled) and are easier to style than canvas-drawn controls. Absolute positioning over the game container keeps them visually integrated without affecting canvas rendering.
+**Rationale:** HTML buttons get free accessibility (focusable, labelled) and are easier to style than canvas-drawn controls. Placing below the canvas (instead of overlaying) keeps the game view unobstructed on mobile. Touch targets are 48px minimum (WCAG). Semi-transparent using `--ui-glass-bg`.
 
-**Layout:** Four directional buttons in a cross pattern, bottom-left of the game container. Touch targets are 48px minimum (WCAG). Semi-transparent using `--ui-glass-bg`.
+**Layout:** Four directional buttons in a cross pattern, centered below the canvas via `margin: 1rem auto 0`.
 
-### Decision 5: Tap-zone detection
+### Decision 5: Gamepad button debouncing
 
-**Choice:** Reuse existing `handleTouchEnd` with a mode check. When tap-zone mode is active and swipe distance is below `minSwipeDistance`, treat it as a tap and map the touch position relative to canvas center to a direction (dominant axis wins).
+**Choice:** Track a `prevButtonStates` array in `InputHandler`. On each poll, only process buttons that transition from not-pressed to pressed (rising edge). Exception: during initials entry, D-pad up/down support hold-to-repeat via frame counting (~300ms initial delay, ~80ms repeat rate).
 
-**Rationale:** Tap zones and swipe use the same touch events. The distinction is: swipe requires minimum distance, tap zones trigger on short/zero-distance touches. Combining them in the same handler avoids duplicate event listeners.
+**Rationale:** The Gamepad API reports instantaneous state — a held button reads as `pressed: true` every frame. Without debouncing, a single button press would fire 60+ times per second. Rising-edge detection is the standard pattern for gamepad input. Hold-to-repeat for initials letter cycling is essential UX since there are 26 letters to scroll through.
 
-### Decision 6: Gamepad button debouncing
-
-**Choice:** Track a `prevButtonStates` array in `InputHandler`. On each poll, only process buttons that transition from not-pressed to pressed (rising edge).
-
-**Rationale:** The Gamepad API reports instantaneous state — a held button reads as `pressed: true` every frame. Without debouncing, a single button press would fire 60+ times per second. Rising-edge detection is the standard pattern for gamepad input.
-
-### Decision 7: `inputGate` for gamepad
+### Decision 6: `inputGate` for gamepad
 
 **Choice:** Check `this.inputGate` at the start of `pollGamepad()` for direction inputs, but always allow menu-navigation inputs (Cross, Circle, D-pad in menus).
 
 **Rationale:** The existing `inputGate` blocks direction input when modals are open (settings, leaderboard). Gamepad direction polling must respect this. However, menu navigation buttons (confirm, back) should still work when modals are open — same as how keyboard Backspace works in `_handleMenuKeyDown` which runs outside the gate.
+
+### Decision 7: Post-initials focus management
+
+**Choice:** After `hideInitials()` removes the `data-ui` attribute, focus the first navigable button on the GAMEOVER screen via `requestAnimationFrame`.
+
+**Rationale:** The auto-focus in `updateState(GAMEOVER)` fires before the initials modal opens (skipped because `data-ui` is set). When initials close, nothing re-triggers focus, leaving gamepad users stranded with no focused element. Explicitly focusing the first GAMEOVER button restores gamepad navigability.
 
 ## Risks / Trade-offs
 
