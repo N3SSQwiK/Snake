@@ -1416,6 +1416,24 @@ class InputHandler {
         const gameState = this.getGameState ? this.getGameState() : null;
         const isPlaying = gameState === GameState.PLAYING;
 
+        // Initials entry mode: D-pad cycles letters/slots, Cross submits, Circle cancels
+        const dataUi = this.uiManager && this.uiManager.container
+            ? this.uiManager.container.getAttribute('data-ui') : null;
+        if (dataUi === 'initials' && this.uiManager) {
+            if (justPressed(12)) this.uiManager._cycleInitialsChar(1);   // D-pad up: next letter
+            if (justPressed(13)) this.uiManager._cycleInitialsChar(-1);  // D-pad down: prev letter
+            if (justPressed(14)) this.uiManager._moveInitialsSlot(-1);   // D-pad left: prev slot
+            if (justPressed(15)) this.uiManager._moveInitialsSlot(1);    // D-pad right: next slot
+            if (justPressed(0)) this.uiManager._submitInitials();        // Cross: submit
+            if (justPressed(1)) this.uiManager.hideInitials();           // Circle: cancel
+
+            for (let i = 0; i < buttons.length; i++) {
+                this.prevButtonStates[i] = buttons[i].pressed;
+            }
+            this.prevButtonStates.length = buttons.length;
+            return;
+        }
+
         // D-pad directions (buttons 12-15)
         if (isPlaying) {
             // During gameplay: D-pad queues directions (respect inputGate)
@@ -2550,11 +2568,14 @@ class UIManager {
             this._initialsSlotTapHandler = null;
         }
 
-        // Restore focus to previously focused element
-        if (this._initialsPrevFocus && this._initialsPrevFocus.focus) {
-            this._initialsPrevFocus.focus();
-        }
+        // Focus first navigable button on the gameover screen
         this._initialsPrevFocus = null;
+        requestAnimationFrame(() => {
+            const buttons = this._getNavigableButtons();
+            if (buttons.length > 0) {
+                buttons[0].focus();
+            }
+        });
     }
 
     _renderInitialsSlots() {
@@ -2562,6 +2583,16 @@ class UIManager {
             slot.textContent = String.fromCharCode(65 + this._initialsChars[i]);
             slot.classList.toggle('initials-slot--active', i === this._initialsIndex);
         });
+    }
+
+    _cycleInitialsChar(delta) {
+        this._initialsChars[this._initialsIndex] = (this._initialsChars[this._initialsIndex] + (delta > 0 ? 1 : 25)) % 26;
+        this._renderInitialsSlots();
+    }
+
+    _moveInitialsSlot(delta) {
+        this._initialsIndex = Math.max(0, Math.min(2, this._initialsIndex + delta));
+        this._renderInitialsSlots();
     }
 
     _handleInitialsKey(e) {
@@ -2573,17 +2604,13 @@ class UIManager {
         const key = e.key;
 
         if (key === 'ArrowUp') {
-            this._initialsChars[this._initialsIndex] = (this._initialsChars[this._initialsIndex] + 1) % 26;
-            this._renderInitialsSlots();
+            this._cycleInitialsChar(1);
         } else if (key === 'ArrowDown') {
-            this._initialsChars[this._initialsIndex] = (this._initialsChars[this._initialsIndex] + 25) % 26;
-            this._renderInitialsSlots();
+            this._cycleInitialsChar(-1);
         } else if (key === 'ArrowRight') {
-            this._initialsIndex = Math.min(this._initialsIndex + 1, 2);
-            this._renderInitialsSlots();
+            this._moveInitialsSlot(1);
         } else if (key === 'ArrowLeft') {
-            this._initialsIndex = Math.max(this._initialsIndex - 1, 0);
-            this._renderInitialsSlots();
+            this._moveInitialsSlot(-1);
         } else if (key === 'Enter') {
             this._submitInitials();
         } else if (key === 'Escape') {
