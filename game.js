@@ -2342,7 +2342,8 @@ class UIManager {
         if (!focusedCard) {
             if (direction === 'up') {
                 // Up from below grid → bottom-left card
-                const bottomLeft = cards[Math.min(cols, cards.length - 1)];
+                const lastRowStart = (Math.ceil(cards.length / cols) - 1) * cols;
+                const bottomLeft = cards[lastRowStart];
                 if (bottomLeft) {
                     this._focusNav(bottomLeft);
                     this.game.audio.init();
@@ -2422,12 +2423,12 @@ class UIManager {
 
     _handleMenuKeyDown(e) {
         const dataUi = this.container.getAttribute('data-ui');
+        const screenKey = dataUi || this.game.state;
+        const navEntry = SCREEN_NAV[screenKey];
+        if (navEntry && navEntry.ownKeyHandler) return;
 
         // ArrowLeft / ArrowRight: navigate (grid, segmented, or focus recovery)
         if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-            const screenKey = dataUi || this.game.state;
-            const navEntry = SCREEN_NAV[screenKey];
-            if (navEntry && navEntry.ownKeyHandler) return;
             // Let native inputs (range sliders, text fields) handle LEFT/RIGHT
             const tag = document.activeElement?.tagName;
             if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
@@ -2438,9 +2439,6 @@ class UIManager {
 
         // ArrowUp / ArrowDown: cycle focus between buttons
         if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-            const screenKey2 = dataUi || this.game.state;
-            const navEntry2 = SCREEN_NAV[screenKey2];
-            if (navEntry2 && navEntry2.ownKeyHandler) return;
             e.preventDefault();
             this.navigateMenu(e.key === 'ArrowDown' ? 'down' : 'up');
             return;
@@ -2448,9 +2446,6 @@ class UIManager {
 
         // Backspace / Delete: navigate back
         if (e.key === 'Backspace' || e.key === 'Delete') {
-            const screenKey3 = dataUi || this.game.state;
-            const navEntry3 = SCREEN_NAV[screenKey3];
-            if (navEntry3 && navEntry3.ownKeyHandler) return;
             const tag = document.activeElement ? document.activeElement.tagName : '';
             if (tag === 'INPUT' || tag === 'TEXTAREA') return;
             e.preventDefault();
