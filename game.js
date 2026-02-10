@@ -389,6 +389,52 @@ const MODE_RULES = {
 };
 
 // =============================================================================
+// SCREEN NAVIGATION REGISTRY
+// =============================================================================
+// Per-screen navigation contracts: back action, focus entry point, grid layout.
+// Keys are data-ui values (modal overlays) or GameState names (state screens).
+
+const SCREEN_NAV = {
+    'mode-select': {
+        back: 'hideModeSelect',
+        focusEntry: '.mode-card[aria-checked="true"]',
+        grid: { cols: 2, selector: '.mode-card' },
+        audio: 'playBack'
+    },
+    'settings': {
+        back: 'hideSettings',
+        focusEntry: '.screen-settings .ui-panel__close',
+        audio: 'playBack'
+    },
+    'leaderboard': {
+        back: 'hideLeaderboard',
+        focusEntry: '.screen-leaderboard .ui-panel__close',
+        audio: 'playBack'
+    },
+    'shortcuts': {
+        back: 'hideShortcuts',
+        focusEntry: '.screen-shortcuts .ui-panel__close',
+        audio: 'playBack'
+    },
+    'initials': {
+        back: 'hideInitials',
+        focusEntry: null,
+        ownKeyHandler: true,
+        audio: 'playBack'
+    },
+    [GameState.PAUSED]: {
+        back: '_resumeFromBack',
+        focusEntry: '.screen-pause .ui-btn',
+        audio: 'playConfirm'
+    },
+    [GameState.GAMEOVER]: {
+        back: '_menuFromBack',
+        focusEntry: '.screen-gameover .ui-btn',
+        audio: 'playBack'
+    }
+};
+
+// =============================================================================
 // AUDIO MANAGER CLASS
 // =============================================================================
 
@@ -1413,9 +1459,9 @@ class InputHandler {
                 this.actionCallbacks.pause();
                 return;
             }
-            if (event.key === 'Escape' && this.actionCallbacks.escape) {
+            if (event.key === 'Escape') {
                 event.preventDefault();
-                this.actionCallbacks.escape();
+                if (this.uiManager) this.uiManager.navigateBack();
                 return;
             }
         }
@@ -1575,7 +1621,7 @@ class InputHandler {
                 // Active overlay takes priority — treat as confirm/click
                 const navBtns = this.uiManager._getNavigableButtons();
                 if (navBtns.length > 0 && !navBtns.includes(document.activeElement)) {
-                    navBtns[0].focus();
+                    this.uiManager._focusNav(navBtns[0]);
                 }
                 if (document.activeElement && typeof document.activeElement.click === 'function') {
                     document.activeElement.click();
@@ -1585,7 +1631,7 @@ class InputHandler {
             } else if (this.uiManager) {
                 const navBtns = this.uiManager._getNavigableButtons();
                 if (navBtns.length > 0 && !navBtns.includes(document.activeElement)) {
-                    navBtns[0].focus();
+                    this.uiManager._focusNav(navBtns[0]);
                 }
                 if (document.activeElement && typeof document.activeElement.click === 'function') {
                     document.activeElement.click();
@@ -2160,6 +2206,15 @@ class UIManager {
         document.addEventListener('keydown', this._handleMenuKeyDown);
     }
 
+    _focusNav(el) {
+        if (!el) return;
+        el.focus();
+        if (el.classList) {
+            el.classList.add('focus-visible');
+            el.addEventListener('blur', () => el.classList.remove('focus-visible'), { once: true });
+        }
+    }
+
     _getVisibleScreen() {
         // Modals (data-ui) take priority over state screens
         const dataUi = this.container.getAttribute('data-ui');
@@ -2191,17 +2246,45 @@ class UIManager {
     }
 
     navigateMenu(direction) {
-        // Mode card grid: 2D directional navigation
         const dataUi = this.container.getAttribute('data-ui');
-        if (dataUi === 'mode-select') {
-            this._navigateModeCardGrid(direction);
+        const screenKey = dataUi || this.game.state;
+        const navEntry = SCREEN_NAV[screenKey];
+
+        // Skip screens that manage their own key handling (e.g., initials)
+        if (navEntry && navEntry.ownKeyHandler) return;
+
+        // Focus recovery: if no element in current screen has focus, auto-focus entry point
+        const screen = this._getVisibleScreen();
+        const screenHasFocus = screen && typeof screen.contains === 'function'
+            && screen.contains(document.activeElement);
+        if (screen && !screenHasFocus) {
+            const focusSelector = navEntry && navEntry.focusEntry;
+            let target = focusSelector ? this.container.querySelector(focusSelector) : null;
+            if (target && target.offsetParent === null) target = null; // hidden
+            if (!target) {
+                const buttons = this._getNavigableButtons();
+                target = buttons.length > 0 ? buttons[0] : null;
+            }
+            if (target) {
+                this._focusNav(target);
+                this.game.audio.init();
+                this.game.audio.playNavigate();
+                return;
+            }
+        }
+
+        // Grid navigation: delegate to grid navigator if screen declares a grid
+        if (navEntry && navEntry.grid) {
+            this._navigateGrid(direction, navEntry.grid);
             return;
         }
 
         if (direction === 'left' || direction === 'right') {
             const delta = direction === 'right' ? 1 : -1;
             const seg = document.activeElement?.closest('.ui-segmented__option');
-            if (seg) this._cycleSegmented(seg, delta);
+            if (seg) { this._cycleSegmented(seg, delta); return; }
+            const swatch = document.activeElement?.closest('.theme-swatch');
+            if (swatch) { this._cycleSiblings(swatch, '.theme-swatch', delta); return; }
             return;
         }
         const buttons = this._getNavigableButtons();
@@ -2213,7 +2296,7 @@ class UIManager {
         } else {
             nextIndex = currentIndex < 0 ? buttons.length - 1 : (currentIndex - 1 + buttons.length) % buttons.length;
         }
-        buttons[nextIndex].focus();
+        this._focusNav(buttons[nextIndex]);
         this.game.audio.init();
         this.game.audio.playNavigate();
     }
@@ -2228,25 +2311,41 @@ class UIManager {
         const next = options[nextIndex];
         if (next.disabled || next.getAttribute('aria-disabled') === 'true') return false;
         next.click();
-        next.focus();
+        this._focusNav(next);
         return true;
     }
 
-    _navigateModeCardGrid(direction) {
-        const grid = this.container.querySelector('.mode-card-grid');
-        if (!grid) return false;
-        const cards = Array.from(grid.querySelectorAll('.mode-card'));
+    _cycleSiblings(element, selector, delta) {
+        const parent = element.parentElement;
+        if (!parent) return;
+        const siblings = Array.from(parent.querySelectorAll(selector));
+        const idx = siblings.indexOf(element);
+        if (idx < 0) return;
+        const nextIdx = (idx + delta + siblings.length) % siblings.length;
+        const next = siblings[nextIdx];
+        if (next.disabled || next.getAttribute('aria-disabled') === 'true') return;
+        this._focusNav(next);
+        this.game.audio.init();
+        this.game.audio.playNavigate();
+    }
+
+    _navigateGrid(direction, gridConfig) {
+        const { cols, selector } = gridConfig;
+        const screen = this._getVisibleScreen();
+        if (!screen) return false;
+        const cards = Array.from(screen.querySelectorAll(selector));
         if (cards.length === 0) return false;
-        const focusedCard = document.activeElement?.closest('.mode-card');
-        const cols = 2;
+        const focusedCard = document.activeElement?.closest(selector);
+
 
         // If focus is not on a card (e.g. Start Game button), jump into the grid
         if (!focusedCard) {
             if (direction === 'up') {
                 // Up from below grid → bottom-left card
-                const bottomLeft = cards[Math.min(cols, cards.length - 1)];
+                const lastRowStart = (Math.ceil(cards.length / cols) - 1) * cols;
+                const bottomLeft = cards[lastRowStart];
                 if (bottomLeft) {
-                    bottomLeft.focus();
+                    this._focusNav(bottomLeft);
                     this.game.audio.init();
                     this.game.audio.playNavigate();
                     return true;
@@ -2254,7 +2353,7 @@ class UIManager {
             }
             if (direction === 'down') {
                 // Down from below grid (wrapping) → top-left card
-                cards[0].focus();
+                this._focusNav(cards[0]);
                 this.game.audio.init();
                 this.game.audio.playNavigate();
                 return true;
@@ -2292,7 +2391,7 @@ class UIManager {
         }
 
         if (target) {
-            target.focus();
+            this._focusNav(target);
             this.game.audio.init();
             this.game.audio.playNavigate();
             return true;
@@ -2302,64 +2401,44 @@ class UIManager {
 
     navigateBack() {
         const dataUi = this.container.getAttribute('data-ui');
-        if (dataUi === 'shortcuts') {
-            this.hideShortcuts();
-            return;
-        }
-        if (dataUi === 'mode-select') {
-            this.game.audio.playBack();
-            this.hideModeSelect();
-            return;
-        }
-        if (dataUi === 'leaderboard') {
-            this.game.audio.playBack();
-            this.hideLeaderboard();
-            return;
-        }
-        if (dataUi === 'settings') {
-            this.game.audio.playBack();
-            this.hideSettings();
-            return;
-        }
+        const key = dataUi || this.game.state;
+        const entry = SCREEN_NAV[key];
+        if (!entry) return; // Unknown screen: no-op
 
-        // No modal open — act on game state
-        const state = this.game.state;
-        if (state === GameState.PAUSED) {
-            this.game.audio.playConfirm();
-            this.game.setState(GameState.PLAYING);
-            return;
+        if (entry.audio) {
+            this.game.audio.init();
+            this.game.audio[entry.audio]();
         }
-        if (state === GameState.GAMEOVER) {
-            this.game.audio.playBack();
-            this.game.reset();
-            this.game.setState(GameState.MENU);
-            return;
-        }
-        // MENU / PLAYING: no-op
+        this[entry.back]();
+    }
+
+    _resumeFromBack() {
+        this.game.setState(GameState.PLAYING);
+    }
+
+    _menuFromBack() {
+        this.game.reset();
+        this.game.setState(GameState.MENU);
     }
 
     _handleMenuKeyDown(e) {
         const dataUi = this.container.getAttribute('data-ui');
+        const screenKey = dataUi || this.game.state;
+        const navEntry = SCREEN_NAV[screenKey];
+        if (navEntry && navEntry.ownKeyHandler) return;
 
-        // ArrowLeft / ArrowRight: cycle segmented controls (or 2D grid nav for mode cards)
+        // ArrowLeft / ArrowRight: navigate (grid, segmented, or focus recovery)
         if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-            if (dataUi === 'initials') return;
-            if (dataUi === 'mode-select') {
-                e.preventDefault();
-                this.navigateMenu(e.key === 'ArrowRight' ? 'right' : 'left');
-                return;
-            }
-            const seg = document.activeElement?.closest('.ui-segmented__option');
-            if (seg && this._cycleSegmented(seg, e.key === 'ArrowRight' ? 1 : -1)) {
-                e.preventDefault();
-            }
+            // Let native inputs (range sliders, text fields) handle LEFT/RIGHT
+            const tag = document.activeElement?.tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+            e.preventDefault();
+            this.navigateMenu(e.key === 'ArrowRight' ? 'right' : 'left');
             return;
         }
 
         // ArrowUp / ArrowDown: cycle focus between buttons
         if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-            // Skip when initials modal is open (has its own arrow handler)
-            if (dataUi === 'initials') return;
             e.preventDefault();
             this.navigateMenu(e.key === 'ArrowDown' ? 'down' : 'up');
             return;
@@ -2367,8 +2446,6 @@ class UIManager {
 
         // Backspace / Delete: navigate back
         if (e.key === 'Backspace' || e.key === 'Delete') {
-            // Skip when initials modal is open or active element is an input
-            if (dataUi === 'initials') return;
             const tag = document.activeElement ? document.activeElement.tagName : '';
             if (tag === 'INPUT' || tag === 'TEXTAREA') return;
             e.preventDefault();
@@ -2768,9 +2845,6 @@ class UIManager {
     }
 
     showInitials(score, storage) {
-        // Store previously focused element for restoration
-        this._initialsPrevFocus = document.activeElement;
-
         this._initialsScore = score;
         this._initialsStorage = storage;
         this._initialsChars = [0, 0, 0];
@@ -2780,8 +2854,9 @@ class UIManager {
         this._renderInitialsSlots();
 
         this.container.setAttribute('data-ui', 'initials');
+        this._trapFocus('.screen-initials');
 
-        // Focus first slot for accessibility
+        // Focus first slot (overrides _trapFocus default focus target)
         requestAnimationFrame(() => {
             const firstSlot = this.initialsSlots[0];
             if (firstSlot) firstSlot.focus();
@@ -2853,14 +2928,7 @@ class UIManager {
             this._initialsSlotTapHandler = null;
         }
 
-        // Focus first navigable button on the gameover screen
-        this._initialsPrevFocus = null;
-        requestAnimationFrame(() => {
-            const buttons = this._getNavigableButtons();
-            if (buttons.length > 0) {
-                buttons[0].focus();
-            }
-        });
+        this._releaseFocus();
     }
 
     _renderInitialsSlots() {
@@ -3990,31 +4058,6 @@ if (typeof document !== 'undefined') {
             }
         });
 
-        game.inputHandler.onAction('escape', () => {
-            // Close modal overlays first
-            const activeUi = container.getAttribute('data-ui');
-            if (activeUi === 'leaderboard') {
-                game.ui.hideLeaderboard();
-                return;
-            }
-            if (activeUi === 'settings') {
-                game.ui.hideSettings();
-                return;
-            }
-            if (activeUi === 'shortcuts') {
-                game.ui.hideShortcuts();
-                return;
-            }
-            if (activeUi === 'initials') {
-                return; // Handled by its own keydown listener
-            }
-
-            if (game.state === GameState.PAUSED || game.state === GameState.GAMEOVER) {
-                game.reset();
-                game.setState(GameState.MENU);
-            }
-        });
-
         // Show keyboard shortcuts with ? key
         document.addEventListener('keydown', (e) => {
             // Only trigger on ? (Shift + / or ?) key, not when typing in inputs
@@ -4192,7 +4235,7 @@ if (typeof document !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         Game, Renderer, Snake, Food, InputHandler, StorageManager, UIManager, AudioManager,
-        GameState, Direction, FoodType, GameMode, MODE_RULES,
+        GameState, Direction, FoodType, GameMode, MODE_RULES, SCREEN_NAV,
         GRID_WIDTH, GRID_HEIGHT, CELL_SIZE,
         FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_DECAY_TICKS_ACCESSIBLE, FOOD_MAX_SPAWN_ATTEMPTS,
         SPECIAL_FOOD_TICKS, SPECIAL_FOOD_TICKS_ACCESSIBLE, DIFFICULTY_LEVELS,
