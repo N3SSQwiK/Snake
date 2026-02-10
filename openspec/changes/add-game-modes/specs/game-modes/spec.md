@@ -3,9 +3,12 @@
 ### Requirement: Mode Selection
 The system SHALL allow the player to choose a game mode before starting a game.
 
-#### Scenario: Mode selector on start menu
-- **WHEN** the start menu is displayed
-- **THEN** a segmented selector is visible with four options: Classic, Time Attack, Maze, Zen
+#### Scenario: Mode selection screen
+- **WHEN** the player clicks Play on the start menu
+- **THEN** a dedicated mode selection screen is displayed with four card tiles: Classic, Time Attack, Maze, Zen
+- **AND** each card shows the mode name and a short description
+- **AND** the previously selected mode is highlighted
+- **AND** a "Start Game" button is visible below the cards
 
 #### Scenario: Default mode
 - **GIVEN** no mode has been previously selected

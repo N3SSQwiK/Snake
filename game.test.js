@@ -62,10 +62,13 @@ const createMockCanvas = () => {
 // Import game module
 const {
     Game, Renderer, Snake, Food, InputHandler, StorageManager, UIManager,
-    GameState, Direction, FoodType,
+    GameState, Direction, FoodType, GameMode, MODE_RULES,
     GRID_WIDTH, GRID_HEIGHT, CELL_SIZE,
     FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_DECAY_TICKS_ACCESSIBLE, FOOD_MAX_SPAWN_ATTEMPTS,
-    SPECIAL_FOOD_TICKS, SPECIAL_FOOD_TICKS_ACCESSIBLE, DIFFICULTY_LEVELS
+    SPECIAL_FOOD_TICKS, SPECIAL_FOOD_TICKS_ACCESSIBLE, DIFFICULTY_LEVELS,
+    TIME_ATTACK_DURATION, TIME_ATTACK_SELF_COLLISION_PENALTY,
+    MAZE_OBSTACLE_COUNTS, MAZE_MAX_REGEN_ATTEMPTS,
+    generateObstacles, floodFillReachable
 } = require('./game.js');
 
 // =============================================================================
@@ -1294,13 +1297,13 @@ describe('StorageManager Leaderboard', () => {
         assert.strictEqual(board[2].score, 50);
     });
 
-    test('leaderboard storage caps at 50 entries', () => {
-        for (let i = 0; i < 55; i++) {
+    test('leaderboard storage caps at 100 entries', () => {
+        for (let i = 0; i < 105; i++) {
             storage.addScore('AAA', (i + 1) * 10);
         }
         const board = storage.getLeaderboard();
-        assert.strictEqual(board.length, 50);
-        assert.strictEqual(board[0].score, 550);
+        assert.strictEqual(board.length, 100);
+        assert.strictEqual(board[0].score, 1050);
     });
 
     test('ties broken by earlier timestamp first', () => {
@@ -3232,6 +3235,201 @@ describe('UIManager navigateMenu', () => {
     });
 });
 
+describe('UIManager _cycleSegmented', () => {
+    function createSegmentedGroup(count, activeIndex) {
+        const options = [];
+        const group = {
+            querySelectorAll: mock.fn(() => options)
+        };
+        for (let i = 0; i < count; i++) {
+            const opt = {
+                tagName: 'BUTTON',
+                className: 'ui-segmented__option',
+                disabled: false,
+                getAttribute: mock.fn(() => null),
+                closest: mock.fn((sel) => sel === '.ui-segmented' ? group : null),
+                click: mock.fn(),
+                focus: mock.fn()
+            };
+            options.push(opt);
+        }
+        return { group, options };
+    }
+
+    test('cycles forward with delta +1', () => {
+        const { ui } = createMockUIManager('MENU');
+        const { options } = createSegmentedGroup(4, 0);
+        const result = ui._cycleSegmented(options[0], 1);
+        assert.strictEqual(result, true);
+        assert.strictEqual(options[1].click.mock.calls.length, 1);
+        assert.strictEqual(options[1].focus.mock.calls.length, 1);
+    });
+
+    test('cycles backward with delta -1', () => {
+        const { ui } = createMockUIManager('MENU');
+        const { options } = createSegmentedGroup(4, 1);
+        const result = ui._cycleSegmented(options[1], -1);
+        assert.strictEqual(result, true);
+        assert.strictEqual(options[0].click.mock.calls.length, 1);
+        assert.strictEqual(options[0].focus.mock.calls.length, 1);
+    });
+
+    test('wraps forward from last to first', () => {
+        const { ui } = createMockUIManager('MENU');
+        const { options } = createSegmentedGroup(4, 3);
+        const result = ui._cycleSegmented(options[3], 1);
+        assert.strictEqual(result, true);
+        assert.strictEqual(options[0].click.mock.calls.length, 1);
+        assert.strictEqual(options[0].focus.mock.calls.length, 1);
+    });
+
+    test('wraps backward from first to last', () => {
+        const { ui } = createMockUIManager('MENU');
+        const { options } = createSegmentedGroup(4, 0);
+        const result = ui._cycleSegmented(options[0], -1);
+        assert.strictEqual(result, true);
+        assert.strictEqual(options[3].click.mock.calls.length, 1);
+        assert.strictEqual(options[3].focus.mock.calls.length, 1);
+    });
+
+    test('returns false for disabled target option', () => {
+        const { ui } = createMockUIManager('MENU');
+        const { options } = createSegmentedGroup(4, 0);
+        options[1].disabled = true;
+        const result = ui._cycleSegmented(options[0], 1);
+        assert.strictEqual(result, false);
+        assert.strictEqual(options[1].click.mock.calls.length, 0);
+    });
+
+    test('returns false for aria-disabled target option', () => {
+        const { ui } = createMockUIManager('MENU');
+        const { options } = createSegmentedGroup(4, 0);
+        options[1].getAttribute = mock.fn((attr) => attr === 'aria-disabled' ? 'true' : null);
+        const result = ui._cycleSegmented(options[0], 1);
+        assert.strictEqual(result, false);
+    });
+
+    test('returns false when element has no segmented parent', () => {
+        const { ui } = createMockUIManager('MENU');
+        const orphan = {
+            closest: mock.fn(() => null),
+            click: mock.fn(),
+            focus: mock.fn()
+        };
+        const result = ui._cycleSegmented(orphan, 1);
+        assert.strictEqual(result, false);
+    });
+});
+
+describe('UIManager navigateMenu left/right', () => {
+    test('navigateMenu left calls _cycleSegmented on focused segmented option', () => {
+        const { ui } = createMockUIManager('MENU');
+        const group = { querySelectorAll: mock.fn(() => [opt1, opt2]) };
+        const opt1 = {
+            closest: mock.fn((sel) => sel === '.ui-segmented' ? group : sel === '.ui-segmented__option' ? opt1 : null),
+            click: mock.fn(), focus: mock.fn(), disabled: false,
+            getAttribute: mock.fn(() => null)
+        };
+        const opt2 = {
+            closest: mock.fn((sel) => sel === '.ui-segmented' ? group : sel === '.ui-segmented__option' ? opt2 : null),
+            click: mock.fn(), focus: mock.fn(), disabled: false,
+            getAttribute: mock.fn(() => null)
+        };
+        global.document.activeElement = opt2;
+        ui.navigateMenu('left');
+        assert.strictEqual(opt1.click.mock.calls.length, 1);
+        assert.strictEqual(opt1.focus.mock.calls.length, 1);
+    });
+
+    test('navigateMenu right cycles segmented option forward', () => {
+        const { ui } = createMockUIManager('MENU');
+        const group = { querySelectorAll: mock.fn(() => [opt1, opt2]) };
+        const opt1 = {
+            closest: mock.fn((sel) => sel === '.ui-segmented' ? group : sel === '.ui-segmented__option' ? opt1 : null),
+            click: mock.fn(), focus: mock.fn(), disabled: false,
+            getAttribute: mock.fn(() => null)
+        };
+        const opt2 = {
+            closest: mock.fn((sel) => sel === '.ui-segmented' ? group : sel === '.ui-segmented__option' ? opt2 : null),
+            click: mock.fn(), focus: mock.fn(), disabled: false,
+            getAttribute: mock.fn(() => null)
+        };
+        global.document.activeElement = opt1;
+        ui.navigateMenu('right');
+        assert.strictEqual(opt2.click.mock.calls.length, 1);
+        assert.strictEqual(opt2.focus.mock.calls.length, 1);
+    });
+
+    test('navigateMenu left is no-op when not on segmented option', () => {
+        const { ui } = createMockUIManager('MENU');
+        global.document.activeElement = { closest: mock.fn(() => null) };
+        ui.navigateMenu('left');
+        // Should not throw
+    });
+});
+
+describe('Gamepad D-pad left/right in menus', () => {
+    let canvas, inputHandler, currentDirection;
+
+    function createMockCanvas() {
+        return {
+            width: 500, height: 500,
+            getContext: mock.fn(() => ({ clearRect: mock.fn(), fillRect: mock.fn() })),
+            getBoundingClientRect: mock.fn(() => ({ left: 0, top: 0, width: 500, height: 500 })),
+            addEventListener: mock.fn(),
+            removeEventListener: mock.fn()
+        };
+    }
+
+    function createMockGamepad(pressedButtons = {}, mapping = 'standard') {
+        const buttons = Array.from({ length: 17 }, (_, i) => ({
+            pressed: !!pressedButtons[i],
+            value: pressedButtons[i] ? 1 : 0
+        }));
+        return { index: 0, mapping, buttons };
+    }
+
+    beforeEach(() => {
+        canvas = createMockCanvas();
+        currentDirection = Direction.RIGHT;
+        inputHandler = new InputHandler(canvas, () => currentDirection);
+        inputHandler.gamepadIndex = 0;
+        inputHandler.prevButtonStates = new Array(17).fill(false);
+        inputHandler.getGameState = () => GameState.MENU;
+        inputHandler.uiManager = {
+            navigateMenu: mock.fn(),
+            navigateBack: mock.fn(),
+            _getNavigableButtons: mock.fn(() => [])
+        };
+        global.navigator = global.navigator || {};
+        global.navigator.getGamepads = mock.fn(() => [createMockGamepad()]);
+    });
+
+    test('D-pad left (button 14) calls navigateMenu left in menus', () => {
+        global.navigator.getGamepads = mock.fn(() => [createMockGamepad({ 14: true })]);
+        inputHandler.pollGamepad();
+        assert.strictEqual(inputHandler.uiManager.navigateMenu.mock.calls.length, 1);
+        assert.strictEqual(inputHandler.uiManager.navigateMenu.mock.calls[0].arguments[0], 'left');
+    });
+
+    test('D-pad right (button 15) calls navigateMenu right in menus', () => {
+        global.navigator.getGamepads = mock.fn(() => [createMockGamepad({ 15: true })]);
+        inputHandler.pollGamepad();
+        assert.strictEqual(inputHandler.uiManager.navigateMenu.mock.calls.length, 1);
+        assert.strictEqual(inputHandler.uiManager.navigateMenu.mock.calls[0].arguments[0], 'right');
+    });
+
+    test('D-pad left/right still queues directions during gameplay', () => {
+        inputHandler.getGameState = () => GameState.PLAYING;
+        currentDirection = Direction.UP;
+        global.navigator.getGamepads = mock.fn(() => [createMockGamepad({ 14: true })]);
+        inputHandler.pollGamepad();
+        assert.strictEqual(inputHandler.directionQueue.length, 1);
+        assert.strictEqual(inputHandler.directionQueue[0], Direction.LEFT);
+        assert.strictEqual(inputHandler.uiManager.navigateMenu.mock.calls.length, 0);
+    });
+});
+
 describe('UIManager navigateBack', () => {
     test('navigateBack closes settings modal', () => {
         const { ui, setDataUi, audioMock, container } = createMockUIManager('MENU');
@@ -3280,6 +3478,235 @@ describe('UIManager navigateBack', () => {
         ui.navigateBack();
         assert.strictEqual(gameMock.setState.mock.calls.length, 0);
         assert.strictEqual(audioMock.playBack.mock.calls.length, 0);
+    });
+
+    test('navigateBack closes mode-select screen', () => {
+        const { ui, setDataUi, audioMock } = createMockUIManager('MENU');
+        setDataUi('mode-select');
+        ui.hideModeSelect = mock.fn();
+        ui.navigateBack();
+        assert.strictEqual(audioMock.playBack.mock.calls.length, 1);
+        assert.strictEqual(ui.hideModeSelect.mock.calls.length, 1);
+    });
+});
+
+// =============================================================================
+// MODE SELECT SCREEN TESTS
+// =============================================================================
+
+describe('UIManager mode select screen', () => {
+    test('showModeSelect sets data-ui to mode-select', () => {
+        const { ui, container } = createMockUIManager('MENU');
+        ui.syncModeCards = mock.fn();
+        ui._trapFocus = mock.fn();
+        ui.showModeSelect();
+        assert.strictEqual(container.setAttribute.mock.calls.some(
+            c => c.arguments[0] === 'data-ui' && c.arguments[1] === 'mode-select'
+        ), true);
+        assert.strictEqual(ui.syncModeCards.mock.calls.length, 1);
+        assert.strictEqual(ui._trapFocus.mock.calls.length, 1);
+    });
+
+    test('hideModeSelect removes data-ui', () => {
+        const { ui, container } = createMockUIManager('MENU');
+        ui._releaseFocus = mock.fn();
+        ui.hideModeSelect();
+        assert.strictEqual(container.removeAttribute.mock.calls.some(
+            c => c.arguments[0] === 'data-ui'
+        ), true);
+        assert.strictEqual(ui._releaseFocus.mock.calls.length, 1);
+    });
+
+    test('Play button shows mode-select screen instead of starting game', () => {
+        const { ui, gameMock, audioMock, container } = createMockUIManager('MENU');
+        ui.showModeSelect = mock.fn();
+        const event = {
+            target: {
+                closest: mock.fn((sel) => {
+                    if (sel === '[data-action]') return { dataset: { action: 'play' } };
+                    return null;
+                })
+            }
+        };
+        ui.handleOverlayClick(event);
+        assert.strictEqual(audioMock.playConfirm.mock.calls.length, 1);
+        assert.strictEqual(ui.showModeSelect.mock.calls.length, 1);
+        assert.strictEqual(gameMock.reset.mock.calls.length, 0);
+    });
+
+    test('start-game action starts the game and hides mode-select', () => {
+        const { ui, gameMock, audioMock } = createMockUIManager('MENU');
+        ui.hideModeSelect = mock.fn();
+        const event = {
+            target: {
+                closest: mock.fn((sel) => {
+                    if (sel === '[data-action]') return { dataset: { action: 'start-game' } };
+                    return null;
+                })
+            }
+        };
+        ui.handleOverlayClick(event);
+        assert.strictEqual(audioMock.playConfirm.mock.calls.length, 1);
+        assert.strictEqual(ui.hideModeSelect.mock.calls.length, 1);
+        assert.strictEqual(gameMock.reset.mock.calls.length, 1);
+        assert.strictEqual(gameMock.setState.mock.calls[0].arguments[0], GameState.PLAYING);
+    });
+
+    test('mode card click sets mode and syncs cards', () => {
+        const { ui, gameMock, audioMock } = createMockUIManager('MENU');
+        gameMock.setMode = mock.fn();
+        ui.syncModeCards = mock.fn();
+        const modeCard = {
+            dataset: { mode: 'maze' },
+            closest: mock.fn((sel) => {
+                if (sel === '.mode-card[data-mode]') return modeCard;
+                return null;
+            })
+        };
+        const event = { target: modeCard };
+        ui.handleOverlayClick(event);
+        assert.strictEqual(gameMock.setMode.mock.calls[0].arguments[0], 'maze');
+        assert.strictEqual(ui.syncModeCards.mock.calls.length, 1);
+        assert.strictEqual(audioMock.playConfirm.mock.calls.length, 1);
+    });
+
+    test('syncModeCards updates aria-checked and tabindex', () => {
+        const { ui, gameMock, container } = createMockUIManager('MENU');
+        gameMock.mode = 'timeAttack';
+        const cards = [
+            { dataset: { mode: 'classic' }, setAttribute: mock.fn() },
+            { dataset: { mode: 'timeAttack' }, setAttribute: mock.fn() },
+            { dataset: { mode: 'maze' }, setAttribute: mock.fn() },
+            { dataset: { mode: 'zen' }, setAttribute: mock.fn() }
+        ];
+        container.querySelectorAll = mock.fn((sel) => {
+            if (sel === '.mode-card[data-mode]') return cards;
+            return [];
+        });
+        ui.syncModeCards();
+        // Classic card: not active
+        assert.deepStrictEqual([...cards[0].setAttribute.mock.calls[0].arguments], ['aria-checked', 'false']);
+        assert.deepStrictEqual([...cards[0].setAttribute.mock.calls[1].arguments], ['tabindex', '-1']);
+        // Time Attack card: active
+        assert.deepStrictEqual([...cards[1].setAttribute.mock.calls[0].arguments], ['aria-checked', 'true']);
+        assert.deepStrictEqual([...cards[1].setAttribute.mock.calls[1].arguments], ['tabindex', '0']);
+    });
+});
+
+describe('UIManager mode card grid navigation', () => {
+    function createGridUIManager() {
+        const result = createMockUIManager('MENU');
+        result.setDataUi('mode-select');
+
+        // Create mock mode cards
+        const cards = [];
+        for (let i = 0; i < 4; i++) {
+            const card = {
+                tagName: 'BUTTON',
+                className: 'mode-card ui-segmented__option',
+                dataset: { mode: ['classic', 'timeAttack', 'maze', 'zen'][i] },
+                focus: mock.fn(),
+                closest: mock.fn((sel) => {
+                    if (sel === '.mode-card') return card;
+                    if (sel === '.mode-card-grid') return grid;
+                    return null;
+                }),
+                offsetParent: {}
+            };
+            cards.push(card);
+        }
+
+        const startBtn = {
+            tagName: 'BUTTON',
+            dataset: { action: 'start-game' },
+            focus: mock.fn(),
+            closest: mock.fn((sel) => {
+                if (sel === '.mode-card') return null;
+                return null;
+            }),
+            offsetParent: {}
+        };
+
+        const grid = {
+            querySelectorAll: mock.fn(() => cards)
+        };
+
+        result.container.querySelector = mock.fn((sel) => {
+            if (sel === '.mode-card-grid') return grid;
+            if (sel === '[data-action="start-game"]') return startBtn;
+            if (sel === '.screen-mode-select') return { querySelector: mock.fn(() => null), querySelectorAll: mock.fn(() => [...cards, startBtn]), scrollTop: 0 };
+            return null;
+        });
+
+        return { ...result, cards, startBtn, grid };
+    }
+
+    test('right from Classic focuses Time Attack', () => {
+        const { ui, cards } = createGridUIManager();
+        global.document.activeElement = cards[0]; // Classic
+        ui.navigateMenu('right');
+        assert.strictEqual(cards[1].focus.mock.calls.length, 1);
+    });
+
+    test('left from Time Attack focuses Classic', () => {
+        const { ui, cards } = createGridUIManager();
+        global.document.activeElement = cards[1]; // Time Attack
+        ui.navigateMenu('left');
+        assert.strictEqual(cards[0].focus.mock.calls.length, 1);
+    });
+
+    test('down from Classic focuses Maze', () => {
+        const { ui, cards } = createGridUIManager();
+        global.document.activeElement = cards[0]; // Classic
+        ui.navigateMenu('down');
+        assert.strictEqual(cards[2].focus.mock.calls.length, 1);
+    });
+
+    test('down from Time Attack focuses Zen', () => {
+        const { ui, cards } = createGridUIManager();
+        global.document.activeElement = cards[1]; // Time Attack
+        ui.navigateMenu('down');
+        assert.strictEqual(cards[3].focus.mock.calls.length, 1);
+    });
+
+    test('up from Maze focuses Classic', () => {
+        const { ui, cards } = createGridUIManager();
+        global.document.activeElement = cards[2]; // Maze
+        ui.navigateMenu('up');
+        assert.strictEqual(cards[0].focus.mock.calls.length, 1);
+    });
+
+    test('down from Maze focuses Start Game button', () => {
+        const { ui, cards, startBtn } = createGridUIManager();
+        global.document.activeElement = cards[2]; // Maze (bottom row)
+        ui.navigateMenu('down');
+        assert.strictEqual(startBtn.focus.mock.calls.length, 1);
+    });
+
+    test('right from Time Attack is no-op (right edge)', () => {
+        const { ui, cards } = createGridUIManager();
+        global.document.activeElement = cards[1]; // Time Attack (col 1)
+        ui.navigateMenu('right');
+        // No card should receive focus (already at right edge)
+        assert.strictEqual(cards[0].focus.mock.calls.length, 0);
+        assert.strictEqual(cards[2].focus.mock.calls.length, 0);
+        assert.strictEqual(cards[3].focus.mock.calls.length, 0);
+    });
+
+    test('up from Classic is no-op (top edge)', () => {
+        const { ui, cards } = createGridUIManager();
+        global.document.activeElement = cards[0]; // Classic (top row)
+        ui.navigateMenu('up');
+        assert.strictEqual(cards[1].focus.mock.calls.length, 0);
+        assert.strictEqual(cards[2].focus.mock.calls.length, 0);
+        assert.strictEqual(cards[3].focus.mock.calls.length, 0);
+    });
+
+    test('up from Start Game focuses bottom-left card', () => {
+        const { ui, cards, startBtn } = createGridUIManager();
+        global.document.activeElement = startBtn;
+        ui.navigateMenu('up');
+        assert.strictEqual(cards[2].focus.mock.calls.length, 1); // Maze
     });
 });
 
@@ -3351,5 +3778,537 @@ describe('InputHandler mobile input method', () => {
         // Direction queue should have the swipe direction
         assert.strictEqual(handler.directionQueue.length, 1);
         assert.strictEqual(handler.directionQueue[0], Direction.RIGHT);
+    });
+});
+
+// =============================================================================
+// GAME MODES TESTS
+// =============================================================================
+
+describe('GameMode constants', () => {
+    test('GameMode has all 4 modes', () => {
+        assert.strictEqual(GameMode.CLASSIC, 'classic');
+        assert.strictEqual(GameMode.TIME_ATTACK, 'timeAttack');
+        assert.strictEqual(GameMode.MAZE, 'maze');
+        assert.strictEqual(GameMode.ZEN, 'zen');
+    });
+
+    test('TIME_ATTACK_DURATION is 600 ticks (60 seconds)', () => {
+        assert.strictEqual(TIME_ATTACK_DURATION, 600);
+    });
+
+    test('TIME_ATTACK_SELF_COLLISION_PENALTY is 50 ticks (5 seconds)', () => {
+        assert.strictEqual(TIME_ATTACK_SELF_COLLISION_PENALTY, 50);
+    });
+
+    test('MAZE_OBSTACLE_COUNTS has per-difficulty values', () => {
+        assert.strictEqual(MAZE_OBSTACLE_COUNTS.easy, 15);
+        assert.strictEqual(MAZE_OBSTACLE_COUNTS.medium, 20);
+        assert.strictEqual(MAZE_OBSTACLE_COUNTS.hard, 25);
+    });
+});
+
+describe('MODE_RULES structure', () => {
+    test('all 4 modes have rules', () => {
+        for (const mode of Object.values(GameMode)) {
+            assert.ok(MODE_RULES[mode], `Missing rules for ${mode}`);
+        }
+    });
+
+    test('each mode has required keys', () => {
+        const requiredKeys = ['onWallCollision', 'onSelfCollision', 'onTick',
+            'hasLeaderboard', 'hasScore', 'hasSpecialFood', 'shouldSpawnObstacles', 'hudExtras'];
+        for (const mode of Object.values(GameMode)) {
+            for (const key of requiredKeys) {
+                assert.ok(key in MODE_RULES[mode], `${mode} missing ${key}`);
+            }
+        }
+    });
+
+    test('Classic mode has all features enabled except obstacles', () => {
+        const rules = MODE_RULES[GameMode.CLASSIC];
+        assert.strictEqual(rules.hasLeaderboard, true);
+        assert.strictEqual(rules.hasScore, true);
+        assert.strictEqual(rules.hasSpecialFood, true);
+        assert.strictEqual(rules.shouldSpawnObstacles, false);
+    });
+
+    test('Zen mode has all scoring/leaderboard disabled', () => {
+        const rules = MODE_RULES[GameMode.ZEN];
+        assert.strictEqual(rules.hasLeaderboard, false);
+        assert.strictEqual(rules.hasScore, false);
+        assert.strictEqual(rules.hasSpecialFood, false);
+        assert.strictEqual(rules.shouldSpawnObstacles, false);
+    });
+
+    test('Time Attack has leaderboard and score', () => {
+        const rules = MODE_RULES[GameMode.TIME_ATTACK];
+        assert.strictEqual(rules.hasLeaderboard, true);
+        assert.strictEqual(rules.hasScore, true);
+    });
+
+    test('Maze has obstacles enabled', () => {
+        const rules = MODE_RULES[GameMode.MAZE];
+        assert.strictEqual(rules.shouldSpawnObstacles, true);
+        assert.strictEqual(rules.hasLeaderboard, true);
+    });
+});
+
+describe('Game class mode support', () => {
+    let game;
+
+    beforeEach(() => {
+        global.localStorage.clear();
+        const canvas = createMockCanvas();
+        game = new Game(canvas);
+    });
+
+    test('default mode is classic', () => {
+        assert.strictEqual(game.mode, GameMode.CLASSIC);
+    });
+
+    test('mode is loaded from storage', () => {
+        global.localStorage.clear();
+        global.localStorage.setItem('snake_mode', JSON.stringify('timeAttack'));
+        const canvas = createMockCanvas();
+        const g = new Game(canvas);
+        assert.strictEqual(g.mode, 'timeAttack');
+    });
+
+    test('setMode updates mode and persists', () => {
+        game.setMode(GameMode.ZEN);
+        assert.strictEqual(game.mode, GameMode.ZEN);
+        assert.strictEqual(JSON.parse(global.localStorage.getItem('snake_mode')), 'zen');
+    });
+
+    test('setMode rejects invalid mode', () => {
+        game.setMode('invalidMode');
+        assert.strictEqual(game.mode, GameMode.CLASSIC);
+    });
+
+    test('timeAttackTimer and obstacles init in constructor', () => {
+        assert.strictEqual(game.timeAttackTimer, 0);
+        assert.strictEqual(game._timeAttackExpired, false);
+        assert.deepStrictEqual(game.obstacles, []);
+        assert.strictEqual(game._obstacleSet, null);
+    });
+});
+
+describe('Classic mode tick regression', () => {
+    let game;
+
+    beforeEach(() => {
+        global.localStorage.clear();
+        const canvas = createMockCanvas();
+        game = new Game(canvas);
+        game.mode = GameMode.CLASSIC;
+        game.setState(GameState.PLAYING);
+    });
+
+    test('wall collision causes game over in Classic', () => {
+        game.wallCollisionEnabled = true;
+        // Move snake off the right edge
+        game.snake.body = [{ x: GRID_WIDTH, y: 5 }];
+        game.snake.direction = Direction.RIGHT;
+        game.tick();
+        assert.strictEqual(game.state, GameState.GAMEOVER);
+    });
+
+    test('self collision causes game over in Classic', () => {
+        // Create a self-collision situation
+        game.snake.body = [
+            { x: 5, y: 5 },
+            { x: 6, y: 5 },
+            { x: 6, y: 6 },
+            { x: 5, y: 6 },
+            { x: 5, y: 5 }  // Self-collision
+        ];
+        // Override checkSelfCollision to return true
+        game.snake.checkSelfCollision = () => true;
+        game.tick();
+        assert.strictEqual(game.state, GameState.GAMEOVER);
+    });
+
+    test('food scoring works in Classic', () => {
+        game.score = 0;
+        game.food.position = { x: game.snake.getHead().x, y: game.snake.getHead().y - 1 };
+        game.food.points = FOOD_POINTS;
+        game.snake.direction = Direction.UP;
+        game.food.checkCollision = (head) => head.x === game.food.position.x && head.y === game.food.position.y;
+        game.food.spawn = mock.fn();
+        game.food.isExpired = () => false;
+        game.audio = { playEat: mock.fn(), playGameOver: mock.fn(), playHighScore: mock.fn(), playPoisonDisappear: mock.fn() };
+        game.tick();
+        assert.strictEqual(game.score, FOOD_POINTS);
+    });
+});
+
+describe('Time Attack mode', () => {
+    let game;
+
+    beforeEach(() => {
+        global.localStorage.clear();
+        const canvas = createMockCanvas();
+        game = new Game(canvas);
+        game.mode = GameMode.TIME_ATTACK;
+        game.reset();
+        game.setState(GameState.PLAYING);
+    });
+
+    test('reset sets timer to TIME_ATTACK_DURATION', () => {
+        assert.strictEqual(game.timeAttackTimer, TIME_ATTACK_DURATION);
+    });
+
+    test('reset clears _timeAttackExpired', () => {
+        game._timeAttackExpired = true;
+        game.reset();
+        assert.strictEqual(game._timeAttackExpired, false);
+    });
+
+    test('timer decrements each tick', () => {
+        const initialTimer = game.timeAttackTimer;
+        // Simple tick without collision
+        game.snake.checkSelfCollision = () => false;
+        game.food.checkCollision = () => false;
+        game.food.isExpired = () => false;
+        game.food.position = { x: 0, y: 0 };
+        game.audio = { playEat: mock.fn(), playGameOver: mock.fn(), playHighScore: mock.fn() };
+        game.tick();
+        assert.strictEqual(game.timeAttackTimer, initialTimer - 1);
+    });
+
+    test('timer reaching 0 triggers game over with _timeAttackExpired true', () => {
+        game.timeAttackTimer = 1;
+        game.snake.checkSelfCollision = () => false;
+        game.food.checkCollision = () => false;
+        game.food.isExpired = () => false;
+        game.food.position = { x: 0, y: 0 };
+        game.audio = { playGameOver: mock.fn(), playHighScore: mock.fn() };
+        game.tick();
+        assert.strictEqual(game.state, GameState.GAMEOVER);
+        assert.strictEqual(game._timeAttackExpired, true);
+    });
+
+    test('self-collision deducts penalty ticks from timer', () => {
+        game.timeAttackTimer = 400;
+        game.snake.body = [
+            { x: 5, y: 5 },
+            { x: 6, y: 5 },
+            { x: 6, y: 6 },
+            { x: 5, y: 6 },
+            { x: 5, y: 5 }
+        ];
+        game.snake.checkSelfCollision = () => true;
+        game.food.checkCollision = () => false;
+        game.food.isExpired = () => false;
+        game.food.position = { x: 0, y: 0 };
+        game.audio = { playGameOver: mock.fn(), playHighScore: mock.fn() };
+        game.tick();
+        // Timer should be reduced by penalty (minus the 1 from onTick)
+        assert.strictEqual(game.timeAttackTimer, 400 - TIME_ATTACK_SELF_COLLISION_PENALTY - 1);
+        // Game should still be playing (timer not zero)
+        assert.strictEqual(game.state, GameState.PLAYING);
+    });
+
+    test('self-collision penalty causing timer to reach 0 triggers game over', () => {
+        game.timeAttackTimer = 30; // Less than penalty
+        game.snake.body = [
+            { x: 5, y: 5 },
+            { x: 6, y: 5 },
+            { x: 6, y: 6 },
+            { x: 5, y: 6 },
+            { x: 5, y: 5 }
+        ];
+        game.snake.checkSelfCollision = () => true;
+        game.food.checkCollision = () => false;
+        game.food.isExpired = () => false;
+        game.food.position = { x: 0, y: 0 };
+        game.audio = { playGameOver: mock.fn(), playHighScore: mock.fn() };
+        game.tick();
+        assert.strictEqual(game.state, GameState.GAMEOVER);
+        // _timeAttackExpired should be false (penalty-caused, not natural expiry)
+        assert.strictEqual(game._timeAttackExpired, false);
+    });
+
+    test('wall collision causes game over in Time Attack (not timer expiry)', () => {
+        game.wallCollisionEnabled = true;
+        game.snake.body = [{ x: GRID_WIDTH, y: 5 }];
+        game.snake.direction = Direction.RIGHT;
+        game.audio = { playGameOver: mock.fn(), playHighScore: mock.fn() };
+        game.tick();
+        assert.strictEqual(game.state, GameState.GAMEOVER);
+        assert.strictEqual(game._timeAttackExpired, false);
+    });
+});
+
+describe('Maze mode', () => {
+    test('generateObstacles returns correct count for each difficulty', () => {
+        for (const diff of ['easy', 'medium', 'hard']) {
+            const result = generateObstacles(diff, { x: 12, y: 12 }, GRID_WIDTH, GRID_HEIGHT, diff === 'easy');
+            assert.ok(result.obstacles.length > 0, `${diff} should have obstacles`);
+            assert.ok(result.obstacles.length <= MAZE_OBSTACLE_COUNTS[diff], `${diff} should not exceed max count`);
+            assert.strictEqual(result.obstacleSet.size, result.obstacles.length);
+        }
+    });
+
+    test('generateObstacles does not place obstacles on protected cells', () => {
+        const start = { x: 12, y: 12 };
+        const result = generateObstacles('medium', start, GRID_WIDTH, GRID_HEIGHT, false);
+        // Check start position
+        assert.ok(!result.obstacleSet.has(`${start.x},${start.y}`), 'No obstacle on start');
+        // Check adjacent
+        assert.ok(!result.obstacleSet.has(`${start.x - 1},${start.y}`), 'No obstacle left of start');
+        assert.ok(!result.obstacleSet.has(`${start.x + 1},${start.y}`), 'No obstacle right of start');
+        // Check initial body (3 behind)
+        for (let i = 1; i <= 3; i++) {
+            assert.ok(!result.obstacleSet.has(`${start.x - i},${start.y}`), `No obstacle on body cell ${i}`);
+        }
+    });
+
+    test('floodFillReachable validates all cells reachable (no obstacles)', () => {
+        const obstacleSet = new Set();
+        const reachable = floodFillReachable({ x: 0, y: 0 }, obstacleSet, GRID_WIDTH, GRID_HEIGHT, false);
+        assert.strictEqual(reachable, GRID_WIDTH * GRID_HEIGHT);
+    });
+
+    test('floodFillReachable handles toroidal adjacency when wallsWrap=true', () => {
+        // Place a wall blocking the path except through wrapping
+        const obstacleSet = new Set();
+        // Block all cells in column 1 except via wrapping
+        for (let y = 0; y < GRID_HEIGHT; y++) {
+            obstacleSet.add(`1,${y}`);
+        }
+        // Without wrap, cells at x=0 can't reach x>=2
+        const reachableNoWrap = floodFillReachable({ x: 0, y: 0 }, obstacleSet, GRID_WIDTH, GRID_HEIGHT, false);
+        assert.ok(reachableNoWrap < GRID_WIDTH * GRID_HEIGHT - obstacleSet.size);
+
+        // With wrap, cells at x=0 can reach x=GRID_WIDTH-1 and then x>=2
+        const reachableWrap = floodFillReachable({ x: 0, y: 0 }, obstacleSet, GRID_WIDTH, GRID_HEIGHT, true);
+        assert.strictEqual(reachableWrap, GRID_WIDTH * GRID_HEIGHT - obstacleSet.size);
+    });
+
+    test('obstacle collision causes game over in Maze', () => {
+        global.localStorage.clear();
+        const canvas = createMockCanvas();
+        const game = new Game(canvas);
+        game.mode = GameMode.MAZE;
+        game.setState(GameState.PLAYING);
+
+        // Place an obstacle right in front of the snake
+        const head = game.snake.getHead();
+        const obstaclePos = { x: head.x, y: head.y - 1 }; // Snake will move up
+        game.obstacles = [obstaclePos];
+        game._obstacleSet = new Set([`${obstaclePos.x},${obstaclePos.y}`]);
+        game.snake.direction = Direction.UP;
+        game.food.position = { x: 20, y: 20 };
+        game.food.checkCollision = () => false;
+        game.food.isExpired = () => false;
+        game.audio = { playGameOver: mock.fn(), playHighScore: mock.fn() };
+        game.tick();
+        assert.strictEqual(game.state, GameState.GAMEOVER);
+    });
+
+    test('reset generates obstacles in Maze mode', () => {
+        global.localStorage.clear();
+        const canvas = createMockCanvas();
+        const game = new Game(canvas);
+        game.mode = GameMode.MAZE;
+        game.reset();
+        assert.ok(game.obstacles.length > 0, 'Maze should have obstacles after reset');
+        assert.ok(game._obstacleSet instanceof Set, '_obstacleSet should be a Set');
+        assert.strictEqual(game._obstacleSet.size, game.obstacles.length);
+    });
+
+    test('reset clears obstacles in non-Maze modes', () => {
+        global.localStorage.clear();
+        const canvas = createMockCanvas();
+        const game = new Game(canvas);
+        game.mode = GameMode.CLASSIC;
+        game.reset();
+        assert.deepStrictEqual(game.obstacles, []);
+        assert.strictEqual(game._obstacleSet, null);
+    });
+});
+
+describe('Zen mode', () => {
+    let game;
+
+    beforeEach(() => {
+        global.localStorage.clear();
+        const canvas = createMockCanvas();
+        game = new Game(canvas);
+        game.mode = GameMode.ZEN;
+        game.reset();
+        game.setState(GameState.PLAYING);
+    });
+
+    test('Zen ignores self-collision', () => {
+        game.snake.body = [
+            { x: 5, y: 5 },
+            { x: 6, y: 5 },
+            { x: 6, y: 6 },
+            { x: 5, y: 6 },
+            { x: 5, y: 5 }
+        ];
+        game.snake.checkSelfCollision = () => true;
+        game.food.checkCollision = () => false;
+        game.food.isExpired = () => false;
+        game.food.position = { x: 0, y: 0 };
+        game.audio = { playGameOver: mock.fn() };
+        game.tick();
+        assert.strictEqual(game.state, GameState.PLAYING);
+    });
+
+    test('Zen wraps walls even on hard difficulty', () => {
+        game.difficulty = 'hard';
+        game.reset();
+        assert.strictEqual(game.wallCollisionEnabled, false, 'Zen forces wall wrapping');
+    });
+
+    test('Zen score stays 0 when eating food', () => {
+        game.score = 0;
+        game.food.position = { x: game.snake.getHead().x, y: game.snake.getHead().y - 1 };
+        game.food.points = FOOD_POINTS;
+        game.snake.direction = Direction.UP;
+        game.food.checkCollision = (head) => head.x === game.food.position.x && head.y === game.food.position.y;
+        game.food.spawn = mock.fn();
+        game.food.isExpired = () => false;
+        game.audio = { playEat: mock.fn() };
+        game.tick();
+        assert.strictEqual(game.score, 0, 'Zen mode should not increment score');
+    });
+
+    test('Zen does not spawn special food', () => {
+        // Verify the hasSpecialFood flag prevents spawning
+        assert.strictEqual(MODE_RULES[GameMode.ZEN].hasSpecialFood, false);
+    });
+
+    test('Zen has no leaderboard', () => {
+        assert.strictEqual(MODE_RULES[GameMode.ZEN].hasLeaderboard, false);
+    });
+});
+
+describe('Leaderboard mode scoping', () => {
+    let storage;
+
+    beforeEach(() => {
+        global.localStorage.clear();
+        storage = new StorageManager();
+    });
+
+    test('addScore stores mode in entry', () => {
+        storage.addScore('AAA', 100, 'medium', false, GameMode.TIME_ATTACK);
+        const board = storage.get('leaderboard', []);
+        assert.strictEqual(board[0].mode, GameMode.TIME_ATTACK);
+    });
+
+    test('getLeaderboard filters by mode', () => {
+        storage.addScore('AAA', 100, 'medium', false, GameMode.CLASSIC);
+        storage.addScore('BBB', 200, 'medium', false, GameMode.TIME_ATTACK);
+        storage.addScore('CCC', 150, 'medium', false, GameMode.MAZE);
+
+        const classic = storage.getLeaderboard('medium', false, GameMode.CLASSIC);
+        assert.strictEqual(classic.length, 1);
+        assert.strictEqual(classic[0].initials, 'AAA');
+
+        const timeAttack = storage.getLeaderboard('medium', false, GameMode.TIME_ATTACK);
+        assert.strictEqual(timeAttack.length, 1);
+        assert.strictEqual(timeAttack[0].initials, 'BBB');
+    });
+
+    test('null-mode entries are treated as classic only', () => {
+        // Simulate legacy entry without mode field
+        storage.set('leaderboard', [
+            { initials: 'OLD', score: 500, difficulty: 'medium', timestamp: Date.now() }
+        ]);
+        const classic = storage.getLeaderboard('medium', false, GameMode.CLASSIC);
+        assert.strictEqual(classic.length, 1);
+        assert.strictEqual(classic[0].initials, 'OLD');
+
+        // Should NOT appear in other modes
+        const timeAttack = storage.getLeaderboard('medium', false, GameMode.TIME_ATTACK);
+        assert.strictEqual(timeAttack.length, 0);
+
+        const maze = storage.getLeaderboard('medium', false, GameMode.MAZE);
+        assert.strictEqual(maze.length, 0);
+    });
+
+    test('cross-mode scores do not interfere', () => {
+        storage.addScore('AAA', 999, 'hard', false, GameMode.TIME_ATTACK);
+
+        assert.strictEqual(storage.isHighScore(100, 'hard', false, GameMode.CLASSIC), true);
+        assert.strictEqual(storage.isNewTopScore(100, 'hard', false, GameMode.CLASSIC), true);
+    });
+
+    test('isHighScore and isNewTopScore use mode parameter', () => {
+        storage.addScore('AAA', 500, 'hard', false, GameMode.CLASSIC);
+        assert.strictEqual(storage.isHighScore(600, 'hard', false, GameMode.CLASSIC), true);
+        assert.strictEqual(storage.isNewTopScore(600, 'hard', false, GameMode.CLASSIC), true);
+
+        // Different mode should be independent
+        assert.strictEqual(storage.isHighScore(1, 'hard', false, GameMode.TIME_ATTACK), true);
+        assert.strictEqual(storage.isNewTopScore(1, 'hard', false, GameMode.TIME_ATTACK), true);
+    });
+});
+
+describe('Renderer drawObstacles', () => {
+    test('drawObstacles draws each obstacle', () => {
+        const canvas = createMockCanvas();
+        const renderer = new Renderer(canvas);
+        const obstacles = [{ x: 5, y: 5 }, { x: 10, y: 10 }];
+
+        const fillRectCalls = canvas._ctx.fillRect.mock.calls.length;
+        renderer.drawObstacles(obstacles);
+        const newCalls = canvas._ctx.fillRect.mock.calls.length - fillRectCalls;
+        assert.strictEqual(newCalls, 2);
+    });
+
+    test('drawObstacles handles empty array', () => {
+        const canvas = createMockCanvas();
+        const renderer = new Renderer(canvas);
+        const fillRectCalls = canvas._ctx.fillRect.mock.calls.length;
+        renderer.drawObstacles([]);
+        assert.strictEqual(canvas._ctx.fillRect.mock.calls.length, fillRectCalls);
+    });
+});
+
+describe('Game reset clears all mode-specific state', () => {
+    test('reset in Classic clears all mode state', () => {
+        global.localStorage.clear();
+        const canvas = createMockCanvas();
+        const game = new Game(canvas);
+        // Set up some mode state
+        game.timeAttackTimer = 100;
+        game._timeAttackExpired = true;
+        game.obstacles = [{ x: 1, y: 1 }];
+        game._obstacleSet = new Set(['1,1']);
+
+        game.mode = GameMode.CLASSIC;
+        game.reset();
+
+        assert.strictEqual(game.timeAttackTimer, 0);
+        assert.strictEqual(game._timeAttackExpired, false);
+        assert.deepStrictEqual(game.obstacles, []);
+        assert.strictEqual(game._obstacleSet, null);
+    });
+
+    test('reset in Time Attack initializes timer', () => {
+        global.localStorage.clear();
+        const canvas = createMockCanvas();
+        const game = new Game(canvas);
+        game.mode = GameMode.TIME_ATTACK;
+        game.reset();
+        assert.strictEqual(game.timeAttackTimer, TIME_ATTACK_DURATION);
+        assert.strictEqual(game._timeAttackExpired, false);
+    });
+
+    test('reset in Zen forces wallCollisionEnabled=false', () => {
+        global.localStorage.clear();
+        const canvas = createMockCanvas();
+        const game = new Game(canvas);
+        game.difficulty = 'hard'; // Hard normally has wallCollision: true
+        game.mode = GameMode.ZEN;
+        game.reset();
+        assert.strictEqual(game.wallCollisionEnabled, false);
     });
 });

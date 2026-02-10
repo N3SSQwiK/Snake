@@ -37,6 +37,10 @@
                     <span id="hud-toxic-segments">-1 seg</span>
                 </span>
             </div>
+            <div class="hud-stat" id="hud-timer-stat" hidden>
+                <span class="hud-label">Time</span>
+                <span class="hud-value" id="hud-timer">1:00</span>
+            </div>
         </div>
 
         <canvas id="game-canvas" role="application" aria-label="Snake game - Use arrow keys or WASD to control the snake" tabindex="0"></canvas>
@@ -69,6 +73,32 @@
                         <button class="ui-btn ui-btn--ghost" data-action="settings">Settings</button>
                         <button class="ui-btn ui-btn--ghost" data-action="highscores">High Scores</button>
                     </div>
+                </div>
+            </div>
+
+            <!-- Mode Select Screen -->
+            <div class="screen-mode-select" role="dialog" aria-label="Select game mode">
+                <div class="ui-panel">
+                    <h2 class="ui-heading">Select Mode</h2>
+                    <div class="mode-card-grid ui-segmented" role="radiogroup" aria-label="Game mode">
+                        <button class="mode-card ui-segmented__option" data-mode="classic" role="radio" aria-checked="true">
+                            <span class="mode-card__name">Classic</span>
+                            <span class="mode-card__desc">Eat food, grow longer, don't hit walls</span>
+                        </button>
+                        <button class="mode-card ui-segmented__option" data-mode="timeAttack" role="radio" aria-checked="false">
+                            <span class="mode-card__name">Time Attack</span>
+                            <span class="mode-card__desc">Score as much as you can in 60 seconds</span>
+                        </button>
+                        <button class="mode-card ui-segmented__option" data-mode="maze" role="radio" aria-checked="false">
+                            <span class="mode-card__name">Maze</span>
+                            <span class="mode-card__desc">Navigate through random obstacles</span>
+                        </button>
+                        <button class="mode-card ui-segmented__option" data-mode="zen" role="radio" aria-checked="false">
+                            <span class="mode-card__name">Zen</span>
+                            <span class="mode-card__desc">Relaxed play, no score or game over</span>
+                        </button>
+                    </div>
+                    <button class="ui-btn ui-btn--primary" data-action="start-game">Start Game</button>
                 </div>
             </div>
 
@@ -124,6 +154,11 @@
                 <div class="ui-panel ui-panel--wide">
                     <button class="ui-panel__close" data-action="leaderboard-back" aria-label="Close leaderboard">&times;</button>
                     <h2 class="ui-heading">High Scores</h2>
+                    <div class="leaderboard-mode-tabs" role="tablist" aria-label="Filter by mode">
+                        <button class="leaderboard-tab" data-mode="classic" role="tab" aria-selected="true" tabindex="0">Classic</button>
+                        <button class="leaderboard-tab" data-mode="timeAttack" role="tab" aria-selected="false" tabindex="-1">Time Attack</button>
+                        <button class="leaderboard-tab" data-mode="maze" role="tab" aria-selected="false" tabindex="-1">Maze</button>
+                    </div>
                     <div class="leaderboard-table" id="leaderboard-body" aria-live="polite" aria-atomic="true"></div>
                 </div>
             </div>
