@@ -1423,23 +1423,21 @@ class InputHandler {
         if (dataUi === 'initials' && this.uiManager) {
             const REPEAT_DELAY = 18; // frames before repeat starts (~300ms at 60fps)
             const REPEAT_RATE = 5;   // frames between repeats (~80ms at 60fps)
-            const repeatButtons = [12, 13, 14, 15]; // D-pad buttons support hold-to-repeat
-
-            for (const btnIdx of repeatButtons) {
+            for (const btnIdx of [12, 13]) { // D-pad up/down: hold-to-repeat
                 if (pressed(btnIdx)) {
                     const frames = (this._gamepadHeldFrames[btnIdx] || 0) + 1;
                     this._gamepadHeldFrames[btnIdx] = frames;
                     const shouldFire = frames === 1 || (frames >= REPEAT_DELAY && (frames - REPEAT_DELAY) % REPEAT_RATE === 0);
                     if (shouldFire) {
-                        if (btnIdx === 12) this.uiManager._cycleInitialsChar(-1);  // D-pad up: prev letter
-                        if (btnIdx === 13) this.uiManager._cycleInitialsChar(1);   // D-pad down: next letter
-                        if (btnIdx === 14) this.uiManager._moveInitialsSlot(-1);   // D-pad left: prev slot
-                        if (btnIdx === 15) this.uiManager._moveInitialsSlot(1);    // D-pad right: next slot
+                        if (btnIdx === 12) this.uiManager._cycleInitialsChar(-1);
+                        if (btnIdx === 13) this.uiManager._cycleInitialsChar(1);
                     }
                 } else {
                     this._gamepadHeldFrames[btnIdx] = 0;
                 }
             }
+            if (justPressed(14)) this.uiManager._moveInitialsSlot(-1);   // D-pad left: single fire
+            if (justPressed(15)) this.uiManager._moveInitialsSlot(1);    // D-pad right: single fire
 
             if (justPressed(0)) this.uiManager._submitInitials();        // Cross: submit
             if (justPressed(1)) this.uiManager.hideInitials();           // Circle: cancel
