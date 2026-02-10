@@ -779,12 +779,10 @@ body {
 
 .dpad {
     display: none;
-    position: absolute;
-    bottom: 1rem;
-    left: 1rem;
+    position: relative;
     width: 144px;
     height: 144px;
-    z-index: 10;
+    margin: 1rem auto 0;
 }
 
 .dpad__btn {

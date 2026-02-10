@@ -1245,7 +1245,7 @@ class InputHandler {
         // Optional gate: when set and returns true, all input is suppressed
         this.inputGate = null;
 
-        // Mobile input method: 'swipe' | 'dpad' | 'tapzone'
+        // Mobile input method: 'swipe' | 'dpad'
         this.mobileInputMethod = 'swipe';
 
         // Touch tracking
@@ -1383,24 +1383,7 @@ class InputHandler {
 
         const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
 
-        // Tap-zone mode: short/zero distance touch maps position relative to canvas center
-        if (this.mobileInputMethod === 'tapzone' && distance < this.minSwipeDistance) {
-            const rect = this.canvas.getBoundingClientRect();
-            const centerX = rect.left + rect.width / 2;
-            const centerY = rect.top + rect.height / 2;
-            const tapDx = touch.clientX - centerX;
-            const tapDy = touch.clientY - centerY;
-            let direction;
-            if (Math.abs(tapDx) > Math.abs(tapDy)) {
-                direction = tapDx > 0 ? Direction.RIGHT : Direction.LEFT;
-            } else {
-                direction = tapDy > 0 ? Direction.DOWN : Direction.UP;
-            }
-            this.queueDirection(direction);
-            return;
-        }
-
-        // Swipe mode: require minimum distance
+        // Require minimum distance for swipe
         if (distance < this.minSwipeDistance) {
             return;
         }

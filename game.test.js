@@ -3190,76 +3190,6 @@ describe('InputHandler gamepad polling', () => {
 // TAP ZONE TESTS
 // =============================================================================
 
-describe('InputHandler tap zones', () => {
-    let canvas;
-    let inputHandler;
-    let currentDirection;
-
-    beforeEach(() => {
-        canvas = createMockCanvas();
-        canvas.addEventListener = mock.fn();
-        canvas.removeEventListener = mock.fn();
-        canvas.getBoundingClientRect = mock.fn(() => ({ left: 0, top: 0, width: 500, height: 500 }));
-        currentDirection = Direction.RIGHT;
-        inputHandler = new InputHandler(canvas, () => currentDirection);
-        inputHandler.mobileInputMethod = 'tapzone';
-    });
-
-    test('tap top quadrant queues UP', () => {
-        inputHandler.touchStartX = 250;
-        inputHandler.touchStartY = 100;
-        inputHandler.handleTouchEnd({
-            preventDefault: mock.fn(),
-            changedTouches: [{ clientX: 250, clientY: 100 }]
-        });
-        assert.strictEqual(inputHandler.directionQueue[0], Direction.UP);
-    });
-
-    test('tap bottom quadrant queues DOWN', () => {
-        currentDirection = Direction.RIGHT;
-        inputHandler.touchStartX = 250;
-        inputHandler.touchStartY = 400;
-        inputHandler.handleTouchEnd({
-            preventDefault: mock.fn(),
-            changedTouches: [{ clientX: 250, clientY: 400 }]
-        });
-        assert.strictEqual(inputHandler.directionQueue[0], Direction.DOWN);
-    });
-
-    test('tap left quadrant queues LEFT', () => {
-        currentDirection = Direction.UP;
-        inputHandler.touchStartX = 100;
-        inputHandler.touchStartY = 250;
-        inputHandler.handleTouchEnd({
-            preventDefault: mock.fn(),
-            changedTouches: [{ clientX: 100, clientY: 250 }]
-        });
-        assert.strictEqual(inputHandler.directionQueue[0], Direction.LEFT);
-    });
-
-    test('tap right quadrant queues RIGHT', () => {
-        currentDirection = Direction.UP;
-        inputHandler.touchStartX = 400;
-        inputHandler.touchStartY = 250;
-        inputHandler.handleTouchEnd({
-            preventDefault: mock.fn(),
-            changedTouches: [{ clientX: 400, clientY: 250 }]
-        });
-        assert.strictEqual(inputHandler.directionQueue[0], Direction.RIGHT);
-    });
-
-    test('tap zones inactive when swipe mode selected', () => {
-        inputHandler.mobileInputMethod = 'swipe';
-        inputHandler.touchStartX = 250;
-        inputHandler.touchStartY = 100;
-        // Short distance tap (below minSwipeDistance)
-        inputHandler.handleTouchEnd({
-            preventDefault: mock.fn(),
-            changedTouches: [{ clientX: 250, clientY: 100 }]
-        });
-        assert.strictEqual(inputHandler.directionQueue.length, 0);
-    });
-});
 
 // =============================================================================
 // NAVIGATEMENU / NAVIGATEBACK TESTS
@@ -3377,8 +3307,8 @@ describe('InputHandler mobile input method', () => {
 
     test('StorageManager persists mobileInput setting', () => {
         const storage = new StorageManager('test_');
-        storage.set('mobileInput', 'tapzone');
-        assert.strictEqual(storage.get('mobileInput', 'swipe'), 'tapzone');
+        storage.set('mobileInput', 'dpad');
+        assert.strictEqual(storage.get('mobileInput', 'swipe'), 'dpad');
         storage.remove('mobileInput');
     });
 });
