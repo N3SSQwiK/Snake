@@ -32,7 +32,7 @@ The system SHALL display a pager header at the top of the leaderboard modal that
 
 #### Scenario: Audio feedback on cycling
 - **WHEN** the player cycles to a different leaderboard mode via the pager
-- **THEN** navigation audio feedback plays
+- **THEN** navigation audio feedback plays (triggered by the caller — `navigateMenu` for keyboard/gamepad, `handleOverlayClick` for mouse/touch — not by `_cycleLeaderboardMode` itself)
 
 ### Requirement: Leaderboard Pager Accessibility
 The system SHALL make the pager component accessible to screen readers and keyboard users.

@@ -154,10 +154,11 @@
                 <div class="ui-panel ui-panel--wide">
                     <button class="ui-panel__close" data-action="leaderboard-back" aria-label="Close leaderboard">&times;</button>
                     <h2 class="ui-heading">High Scores</h2>
-                    <div class="leaderboard-mode-tabs" role="tablist" aria-label="Filter by mode">
-                        <button class="leaderboard-tab" data-mode="classic" role="tab" aria-selected="true" tabindex="0">Classic</button>
-                        <button class="leaderboard-tab" data-mode="timeAttack" role="tab" aria-selected="false" tabindex="-1">Time Attack</button>
-                        <button class="leaderboard-tab" data-mode="maze" role="tab" aria-selected="false" tabindex="-1">Maze</button>
+                    <div class="leaderboard-pager" role="region" aria-label="Leaderboard mode">
+                        <button class="leaderboard-pager__arrow" data-action="leaderboard-prev" aria-label="Previous mode" tabindex="-1">&#8249;</button>
+                        <span class="leaderboard-pager__title" aria-live="polite">Classic</span>
+                        <button class="leaderboard-pager__arrow" data-action="leaderboard-next" aria-label="Next mode" tabindex="-1">&#8250;</button>
+                        <div class="leaderboard-pager__dots"></div>
                     </div>
                     <div class="leaderboard-table" id="leaderboard-body" aria-live="polite" aria-atomic="true"></div>
                 </div>

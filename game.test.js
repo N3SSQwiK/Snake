@@ -1,4 +1,4 @@
-const { test, describe, beforeEach, mock } = require('node:test');
+const { test, describe, beforeEach, afterEach, mock } = require('node:test');
 const assert = require('node:assert');
 
 // Mock document for Node.js environment
@@ -65,7 +65,7 @@ const createMockCanvas = () => {
 // Import game module
 const {
     Game, Renderer, Snake, Food, InputHandler, StorageManager, UIManager,
-    GameState, Direction, FoodType, GameMode, MODE_RULES, SCREEN_NAV,
+    GameState, Direction, FoodType, GameMode, MODE_RULES, SCREEN_NAV, LEADERBOARD_MODES,
     GRID_WIDTH, GRID_HEIGHT, CELL_SIZE, CANVAS_WIDTH, CANVAS_HEIGHT,
     FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_DECAY_TICKS_ACCESSIBLE, FOOD_MAX_SPAWN_ATTEMPTS,
     SPECIAL_FOOD_TICKS, SPECIAL_FOOD_TICKS_ACCESSIBLE, DIFFICULTY_LEVELS,
@@ -3517,6 +3517,194 @@ describe('UIManager navigateMenu left/right', () => {
     });
 });
 
+describe('Leaderboard pager', () => {
+    let origCreateElement, origRAF;
+    beforeEach(() => {
+        origRAF = global.requestAnimationFrame;
+        global.requestAnimationFrame = mock.fn((cb) => cb());
+        origCreateElement = global.document.createElement;
+        global.document.createElement = mock.fn((tag) => {
+            const attrs = {};
+            return {
+                tagName: tag.toUpperCase(),
+                className: '',
+                textContent: '',
+                setAttribute: mock.fn((k, v) => { attrs[k] = v; }),
+                getAttribute: mock.fn((k) => attrs[k]),
+                removeAttribute: mock.fn((k) => { delete attrs[k]; }),
+                appendChild: mock.fn()
+            };
+        });
+    });
+
+    afterEach(() => {
+        if (origRAF) { global.requestAnimationFrame = origRAF; } else { delete global.requestAnimationFrame; }
+        if (origCreateElement) { global.document.createElement = origCreateElement; } else { delete global.document.createElement; }
+    });
+
+    function setupPagerMocks(ui, container) {
+        const pagerTitle = { textContent: '' };
+        const dots = [];
+        const dotsContainer = {
+            replaceChildren: mock.fn(() => { dots.length = 0; }),
+            appendChild: mock.fn((dot) => dots.push(dot))
+        };
+        const origQS = container.querySelector;
+        container.querySelector = mock.fn((sel) => {
+            if (sel === '.leaderboard-pager__title') return pagerTitle;
+            if (sel === '.leaderboard-pager__dots') return dotsContainer;
+            return origQS(sel);
+        });
+        ui.leaderboardBody = { replaceChildren: mock.fn(), closest: mock.fn(() => null), appendChild: mock.fn() };
+        return { pagerTitle, dotsContainer, dots };
+    }
+
+    test('_cycleLeaderboardMode forward: Classic -> Time Attack -> Maze -> Classic', () => {
+        const { ui, container } = createMockUIManager('MENU');
+        setupPagerMocks(ui, container);
+
+        ui._leaderboardMode = GameMode.CLASSIC;
+        ui._cycleLeaderboardMode(1);
+        assert.strictEqual(ui._leaderboardMode, GameMode.TIME_ATTACK);
+
+        ui._cycleLeaderboardMode(1);
+        assert.strictEqual(ui._leaderboardMode, GameMode.MAZE);
+
+        ui._cycleLeaderboardMode(1);
+        assert.strictEqual(ui._leaderboardMode, GameMode.CLASSIC);
+    });
+
+    test('_cycleLeaderboardMode backward: Classic -> Maze -> Time Attack -> Classic', () => {
+        const { ui, container } = createMockUIManager('MENU');
+        setupPagerMocks(ui, container);
+
+        ui._leaderboardMode = GameMode.CLASSIC;
+        ui._cycleLeaderboardMode(-1);
+        assert.strictEqual(ui._leaderboardMode, GameMode.MAZE);
+
+        ui._cycleLeaderboardMode(-1);
+        assert.strictEqual(ui._leaderboardMode, GameMode.TIME_ATTACK);
+
+        ui._cycleLeaderboardMode(-1);
+        assert.strictEqual(ui._leaderboardMode, GameMode.CLASSIC);
+    });
+
+    test('_cycleLeaderboardMode handles unknown mode by falling back to index 0', () => {
+        const { ui, container } = createMockUIManager('MENU');
+        setupPagerMocks(ui, container);
+
+        ui._leaderboardMode = GameMode.ZEN; // not in LEADERBOARD_MODES
+        ui._cycleLeaderboardMode(1);
+        assert.strictEqual(ui._leaderboardMode, GameMode.TIME_ATTACK); // index 0 + 1
+    });
+
+    test('navigateMenu right on leaderboard cycles mode and plays audio', () => {
+        const { ui, setDataUi, audioMock } = createMockUIManager('MENU');
+        setDataUi('leaderboard');
+        ui._cycleLeaderboardMode = mock.fn();
+        global.document.activeElement = { closest: mock.fn(() => null), focus: mock.fn() };
+
+        ui.navigateMenu('right');
+        assert.strictEqual(ui._cycleLeaderboardMode.mock.calls.length, 1);
+        assert.strictEqual(ui._cycleLeaderboardMode.mock.calls[0].arguments[0], 1);
+        assert.strictEqual(audioMock.playNavigate.mock.calls.length, 1);
+    });
+
+    test('navigateMenu left on leaderboard cycles mode backward', () => {
+        const { ui, setDataUi, audioMock } = createMockUIManager('MENU');
+        setDataUi('leaderboard');
+        ui._cycleLeaderboardMode = mock.fn();
+        global.document.activeElement = { closest: mock.fn(() => null), focus: mock.fn() };
+
+        ui.navigateMenu('left');
+        assert.strictEqual(ui._cycleLeaderboardMode.mock.calls.length, 1);
+        assert.strictEqual(ui._cycleLeaderboardMode.mock.calls[0].arguments[0], -1);
+        assert.strictEqual(audioMock.playNavigate.mock.calls.length, 1);
+    });
+
+    test('navigateMenu left/right on leaderboard does NOT cycle segmented', () => {
+        const { ui, setDataUi } = createMockUIManager('MENU');
+        setDataUi('leaderboard');
+        ui._cycleLeaderboardMode = mock.fn();
+        ui._cycleSegmented = mock.fn();
+        const fakeSegmented = { closest: mock.fn(() => fakeSegmented), focus: mock.fn() };
+        global.document.activeElement = fakeSegmented;
+
+        ui.navigateMenu('right');
+        assert.strictEqual(ui._cycleLeaderboardMode.mock.calls.length, 1);
+        assert.strictEqual(ui._cycleSegmented.mock.calls.length, 0);
+    });
+
+    test('showLeaderboard updates pager title text', () => {
+        const { ui, container } = createMockUIManager('MENU');
+        const { pagerTitle } = setupPagerMocks(ui, container);
+
+        ui.showLeaderboard(GameMode.TIME_ATTACK);
+        assert.strictEqual(pagerTitle.textContent, 'Time Attack');
+
+        ui.showLeaderboard(GameMode.MAZE);
+        assert.strictEqual(pagerTitle.textContent, 'Maze');
+
+        ui.showLeaderboard(GameMode.CLASSIC);
+        assert.strictEqual(pagerTitle.textContent, 'Classic');
+    });
+
+    test('showLeaderboard generates correct number of dots', () => {
+        const { ui, container } = createMockUIManager('MENU');
+        const { dots } = setupPagerMocks(ui, container);
+
+        ui.showLeaderboard(GameMode.CLASSIC);
+        assert.strictEqual(dots.length, 3); // Classic, Time Attack, Maze
+        // First dot (Classic) should have aria-current="page"
+        assert.strictEqual(dots[0].getAttribute.mock.calls.length >= 0, true);
+        assert.strictEqual(dots[0].setAttribute.mock.calls.some(
+            c => c.arguments[0] === 'aria-current' && c.arguments[1] === 'page'
+        ), true);
+        // Second dot should NOT have aria-current
+        assert.strictEqual(dots[1].setAttribute.mock.calls.some(
+            c => c.arguments[0] === 'aria-current'
+        ), false);
+    });
+
+    test('handleOverlayClick leaderboard-next calls _cycleLeaderboardMode(1)', () => {
+        const { ui, audioMock } = createMockUIManager('MENU');
+        ui._cycleLeaderboardMode = mock.fn();
+        const target = {
+            closest: mock.fn((sel) => {
+                if (sel === '[data-action="leaderboard-prev"], [data-action="leaderboard-next"]') {
+                    return { dataset: { action: 'leaderboard-next' } };
+                }
+                return null;
+            })
+        };
+        ui.handleOverlayClick({ target });
+        assert.strictEqual(ui._cycleLeaderboardMode.mock.calls.length, 1);
+        assert.strictEqual(ui._cycleLeaderboardMode.mock.calls[0].arguments[0], 1);
+        assert.strictEqual(audioMock.playNavigate.mock.calls.length, 1);
+    });
+
+    test('handleOverlayClick leaderboard-prev calls _cycleLeaderboardMode(-1)', () => {
+        const { ui, audioMock } = createMockUIManager('MENU');
+        ui._cycleLeaderboardMode = mock.fn();
+        const target = {
+            closest: mock.fn((sel) => {
+                if (sel === '[data-action="leaderboard-prev"], [data-action="leaderboard-next"]') {
+                    return { dataset: { action: 'leaderboard-prev' } };
+                }
+                return null;
+            })
+        };
+        ui.handleOverlayClick({ target });
+        assert.strictEqual(ui._cycleLeaderboardMode.mock.calls.length, 1);
+        assert.strictEqual(ui._cycleLeaderboardMode.mock.calls[0].arguments[0], -1);
+        assert.strictEqual(audioMock.playNavigate.mock.calls.length, 1);
+    });
+
+    test('LEADERBOARD_MODES contains Classic, Time Attack, Maze', () => {
+        assert.deepStrictEqual(LEADERBOARD_MODES, [GameMode.CLASSIC, GameMode.TIME_ATTACK, GameMode.MAZE]);
+    });
+});
+
 describe('Gamepad D-pad left/right in menus', () => {
     let canvas, inputHandler, currentDirection;
 
@@ -3576,6 +3764,27 @@ describe('Gamepad D-pad left/right in menus', () => {
         assert.strictEqual(inputHandler.directionQueue.length, 1);
         assert.strictEqual(inputHandler.directionQueue[0], Direction.LEFT);
         assert.strictEqual(inputHandler.uiManager.navigateMenu.mock.calls.length, 0);
+    });
+
+    test('D-pad right cycles leaderboard mode when leaderboard is open', () => {
+        inputHandler.uiManager.navigateMenu = mock.fn((dir) => {
+            // Simulate what navigateMenu does for leaderboard
+            if (dir === 'right') inputHandler.uiManager._cycledMode = true;
+        });
+        global.navigator.getGamepads = mock.fn(() => [createMockGamepad({ 15: true })]);
+        inputHandler.pollGamepad();
+        assert.strictEqual(inputHandler.uiManager.navigateMenu.mock.calls.length, 1);
+        assert.strictEqual(inputHandler.uiManager.navigateMenu.mock.calls[0].arguments[0], 'right');
+    });
+
+    test('D-pad left cycles leaderboard mode backward when leaderboard is open', () => {
+        inputHandler.uiManager.navigateMenu = mock.fn((dir) => {
+            if (dir === 'left') inputHandler.uiManager._cycledMode = true;
+        });
+        global.navigator.getGamepads = mock.fn(() => [createMockGamepad({ 14: true })]);
+        inputHandler.pollGamepad();
+        assert.strictEqual(inputHandler.uiManager.navigateMenu.mock.calls.length, 1);
+        assert.strictEqual(inputHandler.uiManager.navigateMenu.mock.calls[0].arguments[0], 'left');
     });
 });
 
