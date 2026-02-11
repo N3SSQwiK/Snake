@@ -4,7 +4,7 @@
 TBD - created by archiving change add-ui-screens. Update Purpose after archive.
 ## Requirements
 ### Requirement: Start Menu
-The system SHALL display a start menu when the game is in MENU state.
+The system SHALL display a start menu when the game is in MENU state. Overlay panels SHALL scale proportionally with the canvas size using the `--game-scale` CSS custom property.
 
 #### Scenario: Menu display
 - **WHEN** the game state is MENU
@@ -19,6 +19,14 @@ The system SHALL display a start menu when the game is in MENU state.
 - **GIVEN** the start menu is displayed
 - **WHEN** the player clicks the settings button
 - **THEN** the settings screen is displayed
+
+#### Scenario: Panel scales with viewport
+- **WHEN** the game is displayed on a large viewport
+- **THEN** panel max-width, padding, button sizes, and font sizes scale proportionally via `--game-scale` within defined clamp bounds
+
+#### Scenario: Panel fits small viewport
+- **WHEN** the viewport is narrower than 480px
+- **THEN** the panel width adapts to fit within the viewport with appropriate margins
 
 ### Requirement: Pause Functionality
 The system SHALL allow players to pause and resume the game during play.
@@ -97,7 +105,7 @@ The system SHALL display an animated game over screen when the game ends.
 - **THEN** the game transitions to MENU state
 
 ### Requirement: Settings Screen
-The system SHALL provide a settings screen as a modal overlay that does not change the game state. The system SHALL track the previous screen so the back button returns to the correct context. The system SHALL display animated previews for the Difficulty selector, Smooth Animation toggle, and theme swatches.
+The system SHALL provide a settings screen as a modal overlay that does not change the game state. The system SHALL track the previous screen so the back button returns to the correct context. The system SHALL display animated previews for the Difficulty selector, Smooth Animation toggle, and theme swatches. Panel dimensions SHALL scale proportionally with the viewport.
 
 #### Scenario: Settings display
 - **WHEN** the player opens settings
@@ -124,12 +132,12 @@ The system SHALL provide a settings screen as a modal overlay that does not chan
 - **THEN** the previous screen is displayed and all preview animations are stopped
 
 ### Requirement: Mobile Pause Button
-The system SHALL display a pause button on touch devices.
+The system SHALL display a pause button on touch devices. The button size SHALL scale with `--game-scale`.
 
 #### Scenario: Button visibility
 - **GIVEN** the device has a coarse pointer (touch device)
 - **WHEN** the game is in PLAYING state
-- **THEN** a pause button is visible on screen
+- **THEN** a pause button is visible on screen, sized proportionally to the canvas
 
 #### Scenario: Button hidden on desktop
 - **GIVEN** the device has a fine pointer (mouse)
