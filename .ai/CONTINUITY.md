@@ -1,39 +1,39 @@
 # Continuity
 
 ## Summary
-Browser-based snake game with vanilla JS, canvas rendering, class-based architecture. Unified input navigation shipped (PR #57 merged, archived) — SCREEN_NAV registry, unified back dispatch, focus recovery, grid nav generalization. 9 openspec changes queued with revised priority order.
+Browser-based snake game with vanilla JS, canvas rendering, class-based architecture. Responsive layout shipped (PR #61 merged, archived) — dynamic canvas sizing, high-DPI rendering, proportional UI scaling via `--game-scale` + `clamp()`. 8 openspec changes queued. Missing GitHub issues created for leaderboard-pages (#59) and add-dualsense-enhancements (#60).
 
 ## Completed
-- Unified input navigation (PR #57, merged, archived): SCREEN_NAV registry, unified navigateBack(), focus recovery on mouse→keyboard/gamepad, grid nav generalization, initials modal standardization, _focusNav helper, theme swatch cycling, 426 tests
-- Game modes (PR #55, merged, archived): Classic, Time Attack, Maze, Zen + mode selection card screen + 2D grid nav + HUD visibility fix
-- Extended input methods (PR #54, merged): gamepad support, virtual D-pad, mobile Swipe/D-Pad selector, gamepad initials entry
+- Responsive layout (PR #61, merged, archived): dynamic canvas fills viewport, DPR-aware bitmap, `--game-scale` CSS property, two-pass resize for D-pad convergence, flex-shrink fixes, grid drawn during MENU, Playwright browser tests, 438 unit tests
+- Unified input navigation (PR #57, merged, archived): SCREEN_NAV registry, unified navigateBack(), focus recovery, grid nav generalization, initials modal standardization
+- Game modes (PR #55, merged, archived): Classic, Time Attack, Maze, Zen + mode selection card screen
+- Extended input methods (PR #54, merged): gamepad support, virtual D-pad, mobile Swipe/D-Pad selector
 - Settings previews (PR #53, merged), accessibility (PR #45, merged), audio system (PR #44, merged)
 - All prior openspec changes archived and synced
 
 ## Implementation Priority
-Order based on: infrastructure first (horizontal concerns before vertical), least rework, best app delivery.
-
-1. **responsive-layout** — Layout infrastructure. Responsive scaling for all screen sizes. Must land before new UI features to avoid retrofitting. All 4 artifacts complete, 30 tasks.
-2. **leaderboard-pages** — Feature. Pagination for leaderboard display. Builds on stable navigation contracts + responsive layout. All 4 artifacts complete, 18 tasks.
-3. **add-dualsense-enhancements** — Polish. Advanced DualSense features (haptics, LED). Benefits from unified navigation being solid. Proposal only (1/4 artifacts).
+1. **leaderboard-pages** (#59) — Pager navigation replacing horizontal tabs. Builds on responsive layout. All 4 artifacts complete, 18 tasks.
+2. **add-dualsense-enhancements** (#60) — Advanced DualSense features (haptics, LED, gyro). Proposal only (1/4 artifacts).
 
 ### Backlog (proposals only, not yet prioritized)
-- add-achievements, add-snake-skins, add-daily-challenge, add-replay-system, add-local-multiplayer, add-online-leaderboards
+- add-achievements (#46), add-snake-skins (#52), add-daily-challenge (#47), add-replay-system (#51), add-local-multiplayer (#49), add-online-leaderboards (#50)
 
 ## Known Issues
 - None currently tracked
 
 ## Key Files
-- `game.js` - All game code (~4200 lines)
-- `game.test.js` - 426 unit tests
-- `openspec/changes/` - 9 active changes + archive
+- `game.js` - All game code (~4300 lines)
+- `game.test.js` - 438 unit tests
+- `responsive.test.cjs` - 17 Playwright browser verification tests
+- `openspec/changes/` - 8 active changes + archive
 
 ## Context
 - GitHub project board: N3SSQwiK/projects/4
 - openspec `config.yaml` rules field parser bug (warns "must be array of strings") — harmless
+- Playwright installed at `~/node_modules/playwright`, run with `NODE_PATH=~/node_modules`
 
 ## Suggested Prompt
-> Start implementing responsive layout: `/opsx:apply responsive-layout` — all artifacts complete (30 tasks). Create feature branch first.
+> Start implementing leaderboard pages: `/opsx:apply leaderboard-pages` — all artifacts complete (18 tasks). Create feature branch first.
 
 ## Source
 Claude Code | 2026-02-10
