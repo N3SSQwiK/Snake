@@ -935,15 +935,47 @@ class Renderer {
         // Set canvas dimensions
         this.canvas.width = CANVAS_WIDTH;
         this.canvas.height = CANVAS_HEIGHT;
+
+        // Dynamic sizing state
+        this.displaySize = CANVAS_WIDTH;
+        this._scale = 1;
+        this._pendingResize = false;
+        this._pendingDisplaySize = CANVAS_WIDTH;
     }
+
+    resizeToFit(availableWidth, availableHeight) {
+        const displaySize = Math.max(1, Math.floor(Math.min(availableWidth, availableHeight)));
+        if (displaySize === this.displaySize && !this._pendingResize) return;
+        this._pendingDisplaySize = displaySize;
+        this.displaySize = displaySize;
+        this._pendingResize = true;
+        // Set CSS size immediately (non-destructive, no context reset)
+        this.canvas.style.width = displaySize + 'px';
+        this.canvas.style.height = displaySize + 'px';
+    }
+
+    _applyResize() {
+        if (!this._pendingResize) return;
+        this._pendingResize = false;
+        this.displaySize = this._pendingDisplaySize;
+        const dpr = window.devicePixelRatio || 1;
+        const bitmapSize = Math.round(this.displaySize * dpr);
+        this.canvas.width = bitmapSize;
+        this.canvas.height = bitmapSize;
+        this._scale = bitmapSize / CANVAS_WIDTH;
+    }
+
+    get glowScale() { return CANVAS_WIDTH / this.canvas.width; }
 
     setTheme(theme) {
         this.theme = theme;
     }
 
     clear() {
+        this._applyResize();
+        this.ctx.setTransform(this._scale, 0, 0, this._scale, 0, 0);
         this.ctx.fillStyle = this.theme.colors.background;
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        this.ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
     }
 
     drawGrid() {
@@ -1048,7 +1080,7 @@ class Renderer {
 
         // Enable glow effect for the entire snake
         this.ctx.shadowColor = colors.snakeGlow || 'rgba(16, 185, 129, 0.4)';
-        this.ctx.shadowBlur = 8;
+        this.ctx.shadowBlur = 8 * this.glowScale;
 
         // Draw body segments (tail to head) with gradient coloring
         for (let i = bodyLength - 1; i > 0; i--) {
@@ -1178,7 +1210,7 @@ class Renderer {
 
         // Draw glow effect
         this.ctx.shadowColor = this.theme.colors.food;
-        this.ctx.shadowBlur = 8;
+        this.ctx.shadowBlur = 8 * this.glowScale;
 
         // Draw apple body
         this.ctx.fillStyle = this.theme.colors.food;
@@ -1232,7 +1264,7 @@ class Renderer {
         const pulse = reducedMotion ? 1.0 : 1 + 0.08 * Math.sin(currentTick * 0.3);
 
         this.ctx.shadowColor = this.theme.colors.bonusFood;
-        this.ctx.shadowBlur = 10;
+        this.ctx.shadowBlur = 10 * this.glowScale;
         this.ctx.fillStyle = this.theme.colors.bonusFood;
 
         // 4-pointed star shape
@@ -1268,7 +1300,7 @@ class Renderer {
         const cy = y + size / 2;
 
         this.ctx.shadowColor = this.theme.colors.poisonFood;
-        this.ctx.shadowBlur = 8;
+        this.ctx.shadowBlur = 8 * this.glowScale;
         this.ctx.fillStyle = this.theme.colors.poisonFood;
 
         // Diamond/warning shape
@@ -1309,7 +1341,7 @@ class Renderer {
         const pulse = reducedMotion ? 1.0 : 0.85 + 0.15 * Math.sin(currentTick * 0.5);
 
         this.ctx.shadowColor = this.theme.colors.poisonFood;
-        this.ctx.shadowBlur = 12;
+        this.ctx.shadowBlur = 12 * this.glowScale;
         this.ctx.fillStyle = this.theme.colors.poisonFood;
 
         // Spiky circle (8 points)
@@ -3927,10 +3959,10 @@ class Game {
 
     render() {
         this.renderer.clear();
+        this.renderer.drawGrid();
 
         // Draw game elements when playing, paused, or game over
         if (this.state === GameState.PLAYING || this.state === GameState.PAUSED || this.state === GameState.GAMEOVER) {
-            this.renderer.drawGrid();
             this.renderer.drawObstacles(this.obstacles);
 
             // Calculate interpolation factor for smooth animation
@@ -4135,6 +4167,49 @@ if (typeof document !== 'undefined') {
             });
         }
 
+        // Responsive canvas sizing
+        const RESIZE_MARGIN = 16;
+        function measureOuterHeight(el) {
+            if (!el) return 0;
+            const style = getComputedStyle(el);
+            return el.offsetHeight + parseInt(style.marginTop) + parseInt(style.marginBottom);
+        }
+
+        function handleResize() {
+            const hud = document.getElementById('game-hud');
+            const dpad = document.getElementById('dpad');
+            const isCoarse = window.matchMedia('(pointer: coarse)').matches;
+            const hudH = measureOuterHeight(hud);
+            const availW = window.innerWidth - RESIZE_MARGIN * 2;
+            const dpadVisible = dpad && !dpad.hidden && isCoarse;
+
+            // Two-pass: D-pad size depends on --game-scale which depends on canvas size.
+            // First pass sets --game-scale, second pass re-measures D-pad at new scale.
+            for (let i = 0; i < 2; i++) {
+                const dpadH = dpadVisible ? measureOuterHeight(dpad) : 0;
+                const availH = window.innerHeight - hudH - dpadH - RESIZE_MARGIN * 2;
+                game.renderer.resizeToFit(availW, availH);
+                const scale = game.renderer.displaySize / CANVAS_WIDTH;
+                document.documentElement.style.setProperty('--game-scale', scale.toFixed(4));
+            }
+        }
+
+        let resizeTimer;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(handleResize, 100);
+        });
+
+        // Initial sizing before first render
+        handleResize();
+
+        // Re-size when D-pad visibility changes (state transitions)
+        const origSetState = game.setState.bind(game);
+        game.setState = (newState) => {
+            origSetState(newState);
+            handleResize();
+        };
+
         // Start the game loop and show menu
         game.start();
         game.setState(GameState.MENU);
@@ -4236,7 +4311,7 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         Game, Renderer, Snake, Food, InputHandler, StorageManager, UIManager, AudioManager,
         GameState, Direction, FoodType, GameMode, MODE_RULES, SCREEN_NAV,
-        GRID_WIDTH, GRID_HEIGHT, CELL_SIZE,
+        GRID_WIDTH, GRID_HEIGHT, CELL_SIZE, CANVAS_WIDTH, CANVAS_HEIGHT,
         FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_DECAY_TICKS_ACCESSIBLE, FOOD_MAX_SPAWN_ATTEMPTS,
         SPECIAL_FOOD_TICKS, SPECIAL_FOOD_TICKS_ACCESSIBLE, DIFFICULTY_LEVELS,
         TIME_ATTACK_DURATION, TIME_ATTACK_SELF_COLLISION_PENALTY,

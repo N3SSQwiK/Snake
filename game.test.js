@@ -47,11 +47,14 @@ const createMockCanvas = () => {
         closePath: mock.fn(),
         fill: mock.fn(),
         arc: mock.fn(),
-        fillText: mock.fn()
+        fillText: mock.fn(),
+        setTransform: mock.fn(),
+        scale: mock.fn()
     };
     return {
         width: 0,
         height: 0,
+        style: {},
         getContext: () => ctx,
         addEventListener: mock.fn(),
         removeEventListener: mock.fn(),
@@ -63,7 +66,7 @@ const createMockCanvas = () => {
 const {
     Game, Renderer, Snake, Food, InputHandler, StorageManager, UIManager,
     GameState, Direction, FoodType, GameMode, MODE_RULES, SCREEN_NAV,
-    GRID_WIDTH, GRID_HEIGHT, CELL_SIZE,
+    GRID_WIDTH, GRID_HEIGHT, CELL_SIZE, CANVAS_WIDTH, CANVAS_HEIGHT,
     FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_DECAY_TICKS_ACCESSIBLE, FOOD_MAX_SPAWN_ATTEMPTS,
     SPECIAL_FOOD_TICKS, SPECIAL_FOOD_TICKS_ACCESSIBLE, DIFFICULTY_LEVELS,
     TIME_ATTACK_DURATION, TIME_ATTACK_SELF_COLLISION_PENALTY,
@@ -132,6 +135,149 @@ describe('Renderer', () => {
         };
         renderer.setTheme(newTheme);
         assert.strictEqual(renderer.theme.name, 'test');
+    });
+
+    test('constructor defaults: displaySize=500, _scale=1', () => {
+        assert.strictEqual(renderer.displaySize, CANVAS_WIDTH);
+        assert.strictEqual(renderer._scale, 1);
+        assert.strictEqual(renderer._pendingResize, false);
+    });
+
+    test('resizeToFit sets CSS size, pending flag, and displaySize immediately', () => {
+        renderer.resizeToFit(800, 600);
+        assert.strictEqual(renderer._pendingResize, true);
+        assert.strictEqual(renderer._pendingDisplaySize, 600);
+        assert.strictEqual(renderer.displaySize, 600);
+        assert.strictEqual(canvas.style.width, '600px');
+        assert.strictEqual(canvas.style.height, '600px');
+    });
+
+    test('resizeToFit picks minimum of width and height', () => {
+        renderer.resizeToFit(300, 700);
+        assert.strictEqual(renderer._pendingDisplaySize, 300);
+    });
+
+    test('resizeToFit skips when size unchanged', () => {
+        global.window = { devicePixelRatio: 1 };
+        renderer.resizeToFit(800, 600);
+        renderer._applyResize();
+        assert.strictEqual(renderer.displaySize, 600);
+        // Call again with same effective size — should not set pending
+        renderer.resizeToFit(900, 600);
+        assert.strictEqual(renderer._pendingResize, false);
+        delete global.window;
+    });
+
+    test('resizeToFit floors to integer and clamps to 1', () => {
+        renderer.resizeToFit(0.5, 0.3);
+        assert.strictEqual(renderer._pendingDisplaySize, 1);
+    });
+
+    test('_applyResize sets bitmap dimensions with DPR', () => {
+        global.window = { devicePixelRatio: 2 };
+        renderer.resizeToFit(800, 600);
+        renderer._applyResize();
+        assert.strictEqual(renderer.displaySize, 600);
+        assert.strictEqual(canvas.width, 1200); // 600 * 2
+        assert.strictEqual(canvas.height, 1200);
+        assert.strictEqual(renderer._scale, 1200 / CANVAS_WIDTH);
+        assert.strictEqual(renderer._pendingResize, false);
+        delete global.window;
+    });
+
+    test('_applyResize is no-op when no pending resize', () => {
+        const origWidth = canvas.width;
+        renderer._applyResize();
+        assert.strictEqual(canvas.width, origWidth);
+    });
+
+    test('clear() calls setTransform then fillRect with logical dims', () => {
+        renderer.clear();
+        const setTransformCalls = canvas._ctx.setTransform.mock.calls;
+        assert.strictEqual(setTransformCalls.length, 1);
+        assert.deepStrictEqual(setTransformCalls[0].arguments, [1, 0, 0, 1, 0, 0]);
+        const fillCalls = canvas._ctx.fillRect.mock.calls;
+        assert.strictEqual(fillCalls.length, 1);
+        assert.deepStrictEqual(fillCalls[0].arguments, [0, 0, CANVAS_WIDTH, CANVAS_HEIGHT]);
+    });
+
+    test('clear() applies pending resize before drawing', () => {
+        global.window = { devicePixelRatio: 1 };
+        renderer.resizeToFit(800, 800);
+        renderer.clear();
+        assert.strictEqual(renderer._pendingResize, false);
+        assert.strictEqual(renderer.displaySize, 800);
+        assert.strictEqual(canvas.width, 800);
+        // setTransform should use new scale
+        const scale = 800 / CANVAS_WIDTH;
+        const args = canvas._ctx.setTransform.mock.calls[0].arguments;
+        assert.strictEqual(args[0], scale);
+        assert.strictEqual(args[3], scale);
+        delete global.window;
+    });
+
+    test('glowScale returns correct ratio', () => {
+        // Default: canvas.width = CANVAS_WIDTH (500), so glowScale = 1
+        assert.strictEqual(renderer.glowScale, CANVAS_WIDTH / canvas.width);
+        // After resize to larger bitmap
+        global.window = { devicePixelRatio: 2 };
+        renderer.resizeToFit(800, 800);
+        renderer._applyResize();
+        // canvas.width = 1600, glowScale = 500/1600 = 0.3125
+        assert.strictEqual(renderer.glowScale, CANVAS_WIDTH / 1600);
+        delete global.window;
+    });
+});
+
+// =============================================================================
+// RESIZE HANDLER TESTS (integration-level, mocked DOM)
+// =============================================================================
+
+describe('handleResize integration', () => {
+    test('handleResize sets --game-scale on documentElement', () => {
+        // Simulate the core logic of handleResize in isolation
+        const canvas = createMockCanvas();
+        const renderer = new Renderer(canvas);
+        global.window = { devicePixelRatio: 1 };
+
+        // Simulate: viewport 1280x800, hudH=40, no dpad, margin=16
+        const RESIZE_MARGIN = 16;
+        const hudH = 40;
+        const dpadH = 0;
+        const availW = 1280 - RESIZE_MARGIN * 2; // 1248
+        const availH = 800 - hudH - dpadH - RESIZE_MARGIN * 2; // 728
+
+        renderer.resizeToFit(availW, availH);
+        const scale = renderer.displaySize / CANVAS_WIDTH;
+
+        // displaySize should be min(1248, 728) = 728
+        assert.strictEqual(renderer.displaySize, 728);
+        // scale = 728 / 500 = 1.456
+        assert.strictEqual(scale, 728 / CANVAS_WIDTH);
+        assert.ok(scale > 1, '--game-scale should be > 1 on large viewports');
+
+        delete global.window;
+    });
+
+    test('handleResize with D-pad reduces available height', () => {
+        const canvas = createMockCanvas();
+        const renderer = new Renderer(canvas);
+        global.window = { devicePixelRatio: 1 };
+
+        const RESIZE_MARGIN = 16;
+        const hudH = 40;
+        const dpadH = 144; // D-pad visible
+        const availW = 393 - RESIZE_MARGIN * 2; // 361 (iPhone-like)
+        const availH = 852 - hudH - dpadH - RESIZE_MARGIN * 2; // 636
+
+        renderer.resizeToFit(availW, availH);
+        const scale = renderer.displaySize / CANVAS_WIDTH;
+
+        // displaySize should be min(361, 636) = 361
+        assert.strictEqual(renderer.displaySize, 361);
+        assert.ok(scale < 1, '--game-scale should be < 1 on small viewports');
+
+        delete global.window;
     });
 });
 
