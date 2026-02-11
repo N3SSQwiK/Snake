@@ -57,6 +57,7 @@
 
 /* Theme CSS Custom Properties (Classic theme defaults — updated by JS) */
 :root {
+    --game-scale: 1;
     --theme-bg: #0a0a0f;
     --theme-overlay-bg: rgba(10, 10, 15, 0.85);
 
@@ -104,21 +105,23 @@ body {
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    max-width: 100vw;
-    max-height: 100vh;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
 }
 
 /* Canvas */
 #game-canvas {
     display: block;
+    flex-shrink: 0;
     background-color: var(--theme-bg);
-    max-width: 100vw;
-    max-height: 100vh;
-    object-fit: contain;
 }
 
 /* Game HUD */
 .game-hud {
+    width: 100%;
+    flex-shrink: 0;
     display: flex;
     gap: 1.5rem;
     align-items: center;
@@ -269,10 +272,10 @@ body {
     box-shadow:
         0 8px 32px rgba(0, 0, 0, 0.3),
         inset 0 1px 0 rgba(255, 255, 255, 0.1);
-    padding: 2rem;
+    padding: clamp(1.25rem, calc(2rem * var(--game-scale)), 2.5rem);
     position: relative;
-    min-width: 280px;
-    max-width: 340px;
+    min-width: min(280px, 85vw);
+    max-width: clamp(280px, calc(340px * var(--game-scale)), 520px);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -332,14 +335,14 @@ body {
    ============================================================================= */
 
 .ui-title {
-    font-size: 2rem;
+    font-size: clamp(1.5rem, calc(2rem * var(--game-scale)), 3rem);
     font-weight: 700;
     letter-spacing: -0.02em;
     color: var(--ui-text-primary);
 }
 
 .ui-heading {
-    font-size: 1.25rem;
+    font-size: clamp(1.125rem, calc(1.25rem * var(--game-scale)), 1.75rem);
     font-weight: 600;
     letter-spacing: -0.01em;
     color: var(--ui-text-primary);
@@ -370,9 +373,9 @@ body {
 }
 
 .ui-btn {
-    padding: 0.75rem 1.5rem;
-    min-height: 44px;
-    font-size: 0.9375rem;
+    padding: clamp(0.5rem, calc(0.75rem * var(--game-scale)), 1rem) clamp(1rem, calc(1.5rem * var(--game-scale)), 2rem);
+    min-height: clamp(36px, calc(44px * var(--game-scale)), 56px);
+    font-size: clamp(0.8125rem, calc(0.9375rem * var(--game-scale)), 1.125rem);
     font-weight: 500;
     font-family: inherit;
     border-radius: 10px;
@@ -859,8 +862,8 @@ body {
     position: absolute;
     top: 0.5rem;
     right: 0.5rem;
-    width: 44px;
-    height: 44px;
+    width: clamp(36px, calc(44px * var(--game-scale)), 56px);
+    height: clamp(36px, calc(44px * var(--game-scale)), 56px);
     border-radius: 10px;
     background: var(--ui-glass-bg);
     border: 1px solid var(--ui-glass-border);
@@ -894,16 +897,19 @@ body {
 
 .dpad {
     display: none;
+    flex-shrink: 0;
     position: relative;
-    width: 144px;
-    height: 144px;
+    --dpad-size: clamp(120px, calc(144px * var(--game-scale)), 200px);
+    --dpad-btn: clamp(40px, calc(48px * var(--game-scale)), 64px);
+    width: var(--dpad-size);
+    height: var(--dpad-size);
     margin: 1rem auto 0;
 }
 
 .dpad__btn {
     position: absolute;
-    width: 48px;
-    height: 48px;
+    width: var(--dpad-btn);
+    height: var(--dpad-btn);
     border-radius: 10px;
     background: var(--ui-glass-bg);
     border: 1px solid var(--ui-glass-border);
@@ -921,10 +927,10 @@ body {
     background: var(--ui-glass-highlight);
 }
 
-.dpad__btn--up    { top: 0;    left: 48px; }
-.dpad__btn--down  { bottom: 0; left: 48px; }
-.dpad__btn--left  { top: 48px; left: 0;    }
-.dpad__btn--right { top: 48px; right: 0;   }
+.dpad__btn--up    { top: 0;    left: var(--dpad-btn); }
+.dpad__btn--down  { bottom: 0; left: var(--dpad-btn); }
+.dpad__btn--left  { top: var(--dpad-btn); left: 0;    }
+.dpad__btn--right { top: var(--dpad-btn); right: 0;   }
 
 @media (pointer: coarse) {
     .game-container[data-state="PLAYING"] .dpad:not([hidden]) {
@@ -1261,20 +1267,6 @@ kbd {
    ============================================================================= */
 
 @media (max-width: 480px) {
-    .ui-panel {
-        min-width: auto;
-        max-width: calc(100% - 2rem);
-        padding: 1.25rem;
-    }
-
-    .ui-title {
-        font-size: 1.5rem;
-    }
-
-    .ui-heading {
-        font-size: 1.125rem;
-    }
-
     .theme-picker__grid {
         grid-template-columns: repeat(2, 1fr);
         gap: 0.3rem;
