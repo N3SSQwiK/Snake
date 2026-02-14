@@ -22,11 +22,9 @@ The `_cycleSegmented` helper (added in task 7.4) provides a generic cycling mech
 
 **Pager component structure**: A `div.leaderboard-pager` containing a left arrow button, a mode title span, a right arrow button, and a dot indicator row. Arrow buttons use `data-action="leaderboard-prev"` / `data-action="leaderboard-next"` for click handling in `handleOverlayClick`. The mode title shows the human-readable name (e.g., "Time Attack").
 
-**`_cycleLeaderboardMode(delta)` method**: Added to UIManager. Computes the next mode from an ordered array `[GameMode.CLASSIC, GameMode.TIME_ATTACK, GameMode.MAZE]` with wrapping. Calls `showLeaderboard(nextMode)` which already handles content update, then plays navigate audio.
+**`_cycleLeaderboardMode(delta)` method**: Added to UIManager. Computes the next mode from an ordered array `[GameMode.CLASSIC, GameMode.TIME_ATTACK, GameMode.MAZE]` with wrapping. Calls `showLeaderboard(nextMode)` which already handles content update. Does NOT play audio itself — callers (`navigateMenu`, `handleOverlayClick`) play navigate audio to avoid double-play risk identified in challenge review.
 
-**Keyboard integration**: In `_handleMenuKeyDown`, before the segmented control block, check if `dataUi === 'leaderboard'` and call `_cycleLeaderboardMode` with appropriate delta. This takes priority over segmented cycling since there are no segmented controls inside the leaderboard modal.
-
-**Gamepad integration**: Already handled — `navigateMenu('left'/'right')` is called by D-pad Left/Right. Extend the left/right branch in `navigateMenu` to check `dataUi === 'leaderboard'` and call `_cycleLeaderboardMode` before falling through to segmented cycling.
+**Keyboard + Gamepad integration**: In `navigateMenu()` left/right branch, check `dataUi === 'leaderboard'` and call `_cycleLeaderboardMode` before falling through to segmented cycling. This single integration point covers both keyboard (via `_handleMenuKeyDown` → `navigateMenu`) and gamepad (via InputHandler → `navigateMenu`) paths, avoiding redundant code in `_handleMenuKeyDown`.
 
 **Dot indicators**: One dot per leaderboard-eligible mode (3 dots), active dot highlighted. Updated inside `showLeaderboard()` alongside the mode title.
 

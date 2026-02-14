@@ -23,6 +23,8 @@ const GameMode = {
     ZEN: 'zen'
 };
 
+const LEADERBOARD_MODES = [GameMode.CLASSIC, GameMode.TIME_ATTACK, GameMode.MAZE];
+
 // Time Attack constants (values in ticks; 10 ticks/s)
 const TIME_ATTACK_DURATION = 600;              // 60 seconds
 const TIME_ATTACK_SELF_COLLISION_PENALTY = 50; // 5 seconds
@@ -2313,6 +2315,11 @@ class UIManager {
 
         if (direction === 'left' || direction === 'right') {
             const delta = direction === 'right' ? 1 : -1;
+            if (dataUi === 'leaderboard') {
+                this._cycleLeaderboardMode(delta);
+                this.game.audio.playNavigate();
+                return;
+            }
             const seg = document.activeElement?.closest('.ui-segmented__option');
             if (seg) { this._cycleSegmented(seg, delta); return; }
             const swatch = document.activeElement?.closest('.theme-swatch');
@@ -3070,13 +3077,21 @@ class UIManager {
         const midGame = this.game.state === GameState.PLAYING || this.game.state === GameState.PAUSED;
         this.leaderboardBody.replaceChildren();
 
-        // Update mode tabs
-        const tabList = this.container.querySelector('.leaderboard-mode-tabs');
-        if (tabList) {
-            tabList.querySelectorAll('.leaderboard-tab').forEach(tab => {
-                const isActive = tab.dataset.mode === mode;
-                tab.setAttribute('aria-selected', String(isActive));
-                tab.setAttribute('tabindex', isActive ? '0' : '-1');
+        // Update pager title and dots
+        const modeNames = { classic: 'Classic', timeAttack: 'Time Attack', maze: 'Maze' };
+        const pagerTitle = this.container.querySelector('.leaderboard-pager__title');
+        if (pagerTitle) pagerTitle.textContent = modeNames[mode] || mode;
+
+        const dotsContainer = this.container.querySelector('.leaderboard-pager__dots');
+        if (dotsContainer) {
+            dotsContainer.replaceChildren();
+            LEADERBOARD_MODES.forEach((m, i) => {
+                const dot = document.createElement('span');
+                dot.className = 'leaderboard-pager__dot';
+                if (m === mode) {
+                    dot.setAttribute('aria-current', 'page');
+                }
+                dotsContainer.appendChild(dot);
             });
         }
 
@@ -3163,11 +3178,12 @@ class UIManager {
             }
         }
 
-        this._leaderboardPrevUi = this.container.getAttribute('data-ui');
-        this.container.setAttribute('data-ui', 'leaderboard');
-
-        // Set up focus trap for leaderboard modal
-        this._trapFocus('.screen-leaderboard');
+        // Only set up focus trap and data-ui on initial show (not on pager cycling)
+        if (this.container.getAttribute('data-ui') !== 'leaderboard') {
+            this._leaderboardPrevUi = this.container.getAttribute('data-ui');
+            this.container.setAttribute('data-ui', 'leaderboard');
+            this._trapFocus('.screen-leaderboard');
+        }
     }
 
     hideLeaderboard() {
@@ -3178,6 +3194,13 @@ class UIManager {
             this.container.removeAttribute('data-ui');
         }
         this._leaderboardPrevUi = null;
+    }
+
+    _cycleLeaderboardMode(delta) {
+        const idx = LEADERBOARD_MODES.indexOf(this._leaderboardMode);
+        const safeIdx = idx === -1 ? 0 : idx;
+        const next = (safeIdx + delta + LEADERBOARD_MODES.length) % LEADERBOARD_MODES.length;
+        this.showLeaderboard(LEADERBOARD_MODES[next]);
     }
 
     handleOverlayClick(event) {
@@ -3193,10 +3216,12 @@ class UIManager {
             return;
         }
 
-        // Check for leaderboard mode tab click
-        const leaderboardTab = event.target.closest('.leaderboard-tab[data-mode]');
-        if (leaderboardTab && leaderboardTab.dataset.mode) {
-            this.showLeaderboard(leaderboardTab.dataset.mode);
+        // Check for leaderboard pager arrow click
+        const pagerArrow = event.target.closest('[data-action="leaderboard-prev"], [data-action="leaderboard-next"]');
+        if (pagerArrow) {
+            const delta = pagerArrow.dataset.action === 'leaderboard-next' ? 1 : -1;
+            this._cycleLeaderboardMode(delta);
+            this.game.audio.playNavigate();
             return;
         }
 
@@ -4310,7 +4335,7 @@ if (typeof document !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         Game, Renderer, Snake, Food, InputHandler, StorageManager, UIManager, AudioManager,
-        GameState, Direction, FoodType, GameMode, MODE_RULES, SCREEN_NAV,
+        GameState, Direction, FoodType, GameMode, MODE_RULES, SCREEN_NAV, LEADERBOARD_MODES,
         GRID_WIDTH, GRID_HEIGHT, CELL_SIZE, CANVAS_WIDTH, CANVAS_HEIGHT,
         FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_DECAY_TICKS_ACCESSIBLE, FOOD_MAX_SPAWN_ATTEMPTS,
         SPECIAL_FOOD_TICKS, SPECIAL_FOOD_TICKS_ACCESSIBLE, DIFFICULTY_LEVELS,
