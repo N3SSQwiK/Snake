@@ -58,29 +58,26 @@ The system SHALL prompt players to enter 3-character initials when their score q
 - **THEN** initials entry is skipped and the game over screen is shown without saving the score
 
 ### Requirement: Leaderboard Display
-The system SHALL display the leaderboard filtered by mode and difficulty.
+The system SHALL display the leaderboard in a dedicated screen accessible from the start menu. Mode filtering SHALL use a pager component instead of tab buttons.
 
 #### Scenario: Leaderboard access
 - **GIVEN** the start menu is displayed
 - **WHEN** the player clicks high scores
-- **THEN** the leaderboard screen is displayed
-
-#### Scenario: Mode filter
-- **WHEN** the leaderboard screen is displayed
-- **THEN** a mode filter row is shown with tabs for Classic, Time Attack, and Maze (no Zen)
-
-#### Scenario: Default mode filter
-- **WHEN** the leaderboard screen is opened
-- **THEN** the currently selected game mode is the default filter (or Classic if Zen is selected)
+- **THEN** the leaderboard screen is displayed with the pager header showing the current game mode (or Classic if current mode is Zen)
 
 #### Scenario: Entry display
 - **WHEN** the leaderboard screen is displayed
-- **THEN** each entry shows rank, initials, score, and date for the selected mode+difficulty
+- **THEN** each entry shows rank, initials, score, and date for the currently selected mode
 
-#### Scenario: Empty leaderboard for mode
-- **GIVEN** no scores have been saved for the selected mode+difficulty
-- **WHEN** the leaderboard screen is displayed
-- **THEN** a message indicates no scores yet for that mode
+#### Scenario: Empty leaderboard
+- **GIVEN** no scores have been saved for the selected mode
+- **WHEN** the leaderboard screen is displayed for that mode
+- **THEN** a message indicates no scores yet
+
+#### Scenario: Mode cycling updates content
+- **GIVEN** the leaderboard is displayed
+- **WHEN** the player cycles to a different mode via the pager
+- **THEN** the leaderboard entries update to show scores for the newly selected mode
 
 ### Requirement: High Score Celebration
 The system SHALL celebrate when a player achieves a new #1 high score.

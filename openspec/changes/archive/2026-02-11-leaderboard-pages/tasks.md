@@ -28,4 +28,4 @@
 ## 5. Cleanup + Verification
 
 - [x] 5.1 Verify no remaining references to `.leaderboard-tab` or `.leaderboard-mode-tabs` in game.js, index.html, or styles.css
-- [ ] 5.2 Manual browser test: open leaderboard, cycle modes with arrow keys, verify pager title and dots update, verify scores change per mode
+- [x] 5.2 Manual browser test: open leaderboard, cycle modes with arrow keys, verify pager title and dots update, verify scores change per mode
