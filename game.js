@@ -25,6 +25,96 @@ const GameMode = {
 
 const LEADERBOARD_MODES = [GameMode.CLASSIC, GameMode.TIME_ATTACK, GameMode.MAZE];
 
+// Achievement definitions
+const ACHIEVEMENTS = [
+    {
+        id: 'firstBlood',
+        name: 'First Blood',
+        description: 'Eat your first food',
+        icon: '\u2726',
+        condition: (stats) => stats.foodsEaten >= 1
+    },
+    {
+        id: 'glutton',
+        name: 'Glutton',
+        description: 'Eat 50 food in a single game',
+        icon: '\u2605',
+        condition: (stats) => stats.foodsEaten >= 50
+    },
+    {
+        id: 'speedDemon',
+        name: 'Speed Demon',
+        description: 'Reach maximum speed',
+        icon: '\u26A1',
+        condition: (stats) => stats.reachedMaxSpeed
+    },
+    {
+        id: 'marathon',
+        name: 'Marathon',
+        description: 'Survive for 500 ticks in a single game',
+        icon: '\u231B',
+        condition: (stats) => stats.ticksSurvived >= 500
+    },
+    {
+        id: 'century',
+        name: 'Century',
+        description: 'Score 100 points in a single game',
+        icon: '\u2694',
+        condition: (stats) => stats.score >= 100
+    },
+    {
+        id: 'top10',
+        name: 'Top 10',
+        description: 'Make the leaderboard',
+        icon: '\u2655',
+        condition: (stats) => stats.madeLeaderboard
+    },
+    {
+        id: 'perfectionist',
+        name: 'Perfectionist',
+        description: 'Fill all 10 leaderboard slots for any mode+difficulty',
+        icon: '\u2660',
+        condition: (stats, progress) => progress.filledLeaderboard
+    },
+    {
+        id: 'untouchable',
+        name: 'Untouchable',
+        description: 'Score 100 without wall collision (Easy difficulty)',
+        icon: '\u2622',
+        condition: (stats) => stats.score >= 100 && stats.difficulty === 'easy'
+    },
+    {
+        id: 'hazardPay',
+        name: 'Hazard Pay',
+        description: 'Eat toxic food and finish with score > 0',
+        icon: '\u2623',
+        condition: (stats) => stats.toxicFoodsEaten > 0 && stats.score > 0
+    },
+    {
+        id: 'hardModeHero',
+        name: 'Hard Mode Hero',
+        description: 'Score 200 on Hard difficulty',
+        icon: '\u265B',
+        condition: (stats) => stats.score >= 200 && stats.difficulty === 'hard'
+    },
+    {
+        id: 'tripleThreat',
+        name: 'Triple Threat',
+        description: 'Make the leaderboard on 3 different difficulties',
+        icon: '\u2663',
+        condition: (stats, progress) => progress.difficultiesWithLeaderboard.length >= 3
+    },
+    {
+        id: 'allRounder',
+        name: 'All Rounder',
+        description: 'Play every game mode at least once',
+        icon: '\u2740',
+        condition: (stats, progress) => progress.modesPlayed.length >= Object.keys(GameMode).length
+    }
+];
+Object.freeze(ACHIEVEMENTS);
+for (const a of ACHIEVEMENTS) Object.freeze(a);
+
 // Time Attack constants (values in ticks; 10 ticks/s)
 const TIME_ATTACK_DURATION = 600;              // 60 seconds
 const TIME_ATTACK_SELF_COLLISION_PENALTY = 50; // 5 seconds
@@ -413,6 +503,11 @@ const SCREEN_NAV = {
         focusEntry: '.screen-leaderboard .ui-panel__close',
         audio: 'playBack'
     },
+    'achievements': {
+        back: 'hideAchievements',
+        focusEntry: '.screen-achievements .ui-panel__close',
+        audio: 'playBack'
+    },
     'shortcuts': {
         back: 'hideShortcuts',
         focusEntry: '.screen-shortcuts .ui-panel__close',
@@ -554,6 +649,10 @@ class AudioManager {
         this._playSequence([659, 784, 880, 1047, 1319], 0.1, 0.02);
     }
 
+    playAchievementUnlock() {
+        this._playSequence([784, 988, 1175], 0.08, 0.02);
+    }
+
     // UI sounds
     playNavigate() {
         this._playTone(600, 0.03, 'sine', 0.002, 0.01);
@@ -693,6 +792,112 @@ class StorageManager {
             }
         }
         return newlyUnlocked;
+    }
+
+    getAchievements() {
+        return this.get('achievements', {});
+    }
+
+    saveAchievements(unlocked) {
+        this.set('achievements', unlocked);
+    }
+
+    getAchievementProgress() {
+        return this.get('achievementProgress', {
+            gamesPlayed: 0,
+            modesPlayed: [],
+            difficultiesWithLeaderboard: [],
+            filledLeaderboard: false
+        });
+    }
+
+    saveAchievementProgress(progress) {
+        this.set('achievementProgress', progress);
+    }
+}
+
+// =============================================================================
+// ACHIEVEMENT MANAGER CLASS
+// =============================================================================
+
+class AchievementManager {
+    constructor(storage) {
+        this.storage = storage;
+
+        // Load persisted state with corruption fallback
+        const saved = storage.getAchievements();
+        this.unlocked = (saved && typeof saved === 'object' && !Array.isArray(saved)) ? saved : {};
+
+        const savedProgress = storage.getAchievementProgress();
+        this.progress = (savedProgress && typeof savedProgress === 'object' && !Array.isArray(savedProgress))
+            ? {
+                gamesPlayed: savedProgress.gamesPlayed || 0,
+                modesPlayed: Array.isArray(savedProgress.modesPlayed) ? savedProgress.modesPlayed : [],
+                difficultiesWithLeaderboard: Array.isArray(savedProgress.difficultiesWithLeaderboard) ? savedProgress.difficultiesWithLeaderboard : [],
+                filledLeaderboard: savedProgress.filledLeaderboard || false
+            }
+            : { gamesPlayed: 0, modesPlayed: [], difficultiesWithLeaderboard: [], filledLeaderboard: false };
+
+        this.resetSession();
+    }
+
+    resetSession() {
+        this.session = {
+            foodsEaten: 0,
+            toxicFoodsEaten: 0,
+            bonusFoodsEaten: 0,
+            maxTickRate: 0,
+            ticksSurvived: 0,
+            reachedMaxSpeed: false
+        };
+    }
+
+    onFoodEaten(foodType) {
+        this.session.foodsEaten++;
+        if (foodType === FoodType.TOXIC) this.session.toxicFoodsEaten++;
+        if (foodType === FoodType.BONUS) this.session.bonusFoodsEaten++;
+    }
+
+    checkAchievements(stats) {
+        const mergedStats = { ...stats, ...this.session };
+        const newlyUnlocked = [];
+
+        for (const achievement of ACHIEVEMENTS) {
+            if (this.unlocked[achievement.id]) continue;
+            try {
+                if (achievement.condition(mergedStats, this.progress)) {
+                    this.unlocked[achievement.id] = Date.now();
+                    newlyUnlocked.push(achievement);
+                }
+            } catch (_e) {
+                // Skip achievements with evaluation errors
+            }
+        }
+
+        if (newlyUnlocked.length > 0) {
+            this.storage.saveAchievements(this.unlocked);
+        }
+
+        return newlyUnlocked;
+    }
+
+    getAll() {
+        return ACHIEVEMENTS.map(a => ({
+            ...a,
+            unlocked: !!this.unlocked[a.id],
+            unlockedAt: this.unlocked[a.id] || null
+        }));
+    }
+
+    getUnlocked() {
+        return Object.keys(this.unlocked);
+    }
+
+    getProgress() {
+        return {
+            unlocked: Object.keys(this.unlocked).length,
+            total: ACHIEVEMENTS.length
+        };
     }
 }
 
@@ -3029,6 +3234,28 @@ class UIManager {
         const mode = this.game.mode;
         const wasTopScore = this._initialsStorage.isNewTopScore(this._initialsScore, difficulty, assisted, mode);
         this._initialsStorage.addScore(initials, this._initialsScore, difficulty, assisted, mode);
+
+        // Check leaderboard-related achievements after score is saved
+        const leaderboard = this._initialsStorage.getLeaderboard(difficulty, assisted, mode);
+        const filledLeaderboard = leaderboard.length >= 10;
+        if (filledLeaderboard) {
+            this.game.achievements.progress.filledLeaderboard = true;
+        }
+        if (!this.game.achievements.progress.difficultiesWithLeaderboard.includes(difficulty)) {
+            this.game.achievements.progress.difficultiesWithLeaderboard.push(difficulty);
+        }
+        this.game.achievements.storage.saveAchievementProgress(this.game.achievements.progress);
+        const postLeaderboardAchievements = this.game.achievements.checkAchievements({
+            score: this._initialsScore,
+            difficulty,
+            mode,
+            madeLeaderboard: true
+        });
+        if (postLeaderboardAchievements.length > 0) {
+            this.showAchievementToast(postLeaderboardAchievements);
+            this.game.audio.playAchievementUnlock();
+        }
+
         this.hideInitials();
         // Refresh game-over screen with updated best score
         this.updateScore(this._initialsScore);
@@ -3346,12 +3573,124 @@ class UIManager {
                 this.game.audio.playBack();
                 this.hideLeaderboard();
                 break;
+            case 'achievements':
+                this.game.audio.playConfirm();
+                this.showAchievements();
+                break;
+            case 'achievements-back':
+                this.game.audio.playBack();
+                this.hideAchievements();
+                break;
+        }
+    }
+
+    showAchievements() {
+        this.container.setAttribute('data-ui', 'achievements');
+        const list = this.overlay.querySelector('.achievements-list');
+        if (!list) return;
+        list.innerHTML = '';
+        const all = this.game.achievements.getAll();
+        for (const a of all) {
+            const item = document.createElement('div');
+            item.className = 'achievement-item' + (a.unlocked ? ' achievement-item--unlocked' : ' achievement-item--locked');
+            item.setAttribute('role', 'listitem');
+            item.setAttribute('aria-label', `${a.name}: ${a.description}. ${a.unlocked ? 'Unlocked' : 'Locked'}`);
+            const icon = document.createElement('span');
+            icon.className = 'achievement-item__icon';
+            icon.textContent = a.unlocked ? a.icon : '\u2737';
+            icon.setAttribute('aria-hidden', 'true');
+            const info = document.createElement('div');
+            info.className = 'achievement-item__info';
+            const name = document.createElement('span');
+            name.className = 'achievement-item__name';
+            name.textContent = a.name;
+            const desc = document.createElement('span');
+            desc.className = 'achievement-item__desc';
+            desc.textContent = a.description;
+            info.appendChild(name);
+            info.appendChild(desc);
+            item.appendChild(icon);
+            item.appendChild(info);
+            if (a.unlocked && a.unlockedAt) {
+                const date = document.createElement('span');
+                date.className = 'achievement-item__date';
+                date.textContent = new Date(a.unlockedAt).toLocaleDateString();
+                item.appendChild(date);
+            }
+            list.appendChild(item);
+        }
+        const heading = this.overlay.querySelector('.screen-achievements .achievements-heading');
+        if (heading) {
+            const p = this.game.achievements.getProgress();
+            heading.textContent = `Achievements (${p.unlocked}/${p.total})`;
+        }
+        this._trapFocus('.screen-achievements');
+    }
+
+    hideAchievements() {
+        this._releaseFocus();
+        this.container.removeAttribute('data-ui');
+    }
+
+    showAchievementToast(achievements) {
+        if (!this._achievementQueue) this._achievementQueue = [];
+        this._achievementQueue.push(...achievements);
+        if (!this._toastActive) this._showNextToast();
+    }
+
+    _showNextToast() {
+        if (!this._achievementQueue || this._achievementQueue.length === 0) {
+            this._toastActive = false;
+            return;
+        }
+        this._toastActive = true;
+        const achievement = this._achievementQueue.shift();
+        const toastContainer = this.container.querySelector('.achievement-toast');
+        if (!toastContainer) {
+            this._toastActive = false;
+            return;
+        }
+        toastContainer.textContent = '';
+        const toast = document.createElement('div');
+        toast.className = 'achievement-toast__item';
+        const label = document.createElement('span');
+        label.className = 'achievement-toast__label';
+        label.textContent = 'Achievement Unlocked!';
+        const icon = document.createElement('span');
+        icon.className = 'achievement-toast__icon';
+        icon.textContent = achievement.icon;
+        icon.setAttribute('aria-hidden', 'true');
+        const name = document.createElement('span');
+        name.className = 'achievement-toast__name';
+        name.textContent = achievement.name;
+        toast.appendChild(label);
+        toast.appendChild(icon);
+        toast.appendChild(name);
+        toastContainer.appendChild(toast);
+        this._toastTimerId = setTimeout(() => {
+            toast.classList.add('achievement-toast__item--fade');
+            this._toastFadeTimerId = setTimeout(() => {
+                if (toast.parentNode) toast.parentNode.removeChild(toast);
+                this._showNextToast();
+            }, 500);
+        }, 3000);
+    }
+
+    updateAchievementButton() {
+        const btn = this.overlay.querySelector('[data-action="achievements"]');
+        if (btn && this.game.achievements) {
+            const p = this.game.achievements.getProgress();
+            btn.textContent = `Achievements (${p.unlocked}/${p.total})`;
         }
     }
 
     destroy() {
         this.overlay.removeEventListener('click', this.handleOverlayClick);
         document.removeEventListener('keydown', this._handleMenuKeyDown);
+        this._achievementQueue = [];
+        this._toastActive = false;
+        clearTimeout(this._toastTimerId);
+        clearTimeout(this._toastFadeTimerId);
     }
 }
 
@@ -3524,6 +3863,9 @@ class Game {
         // Initialize input handler
         this.inputHandler = new InputHandler(canvas, () => this.snake.direction);
 
+        // Initialize achievement manager
+        this.achievements = new AchievementManager(this.storage);
+
         // Accessibility: screen reader announcer elements
         this._srAnnouncer = null;
         this._srScore = null;
@@ -3549,6 +3891,9 @@ class Game {
             this.ui.updateState(newState);
             if (newState === GameState.GAMEOVER) {
                 this.ui.updateScore(this.score);
+            }
+            if (newState === GameState.MENU) {
+                this.ui.updateAchievementButton();
             }
         }
 
@@ -3594,6 +3939,28 @@ class Game {
             this.announce(`Game over! You made the leaderboard with ${this.score} points!`, 'assertive');
         } else {
             this.announce(`Game over! Final score: ${this.score} points`, 'assertive');
+        }
+
+        // Check achievements
+        const diffConfig = this.getDifficultyConfig();
+        const currentTickRate = 1000 / this.tickInterval;
+        this.achievements.session.ticksSurvived = this.tickCount;
+        this.achievements.session.reachedMaxSpeed = currentTickRate >= diffConfig.maxTickRate;
+
+        // Update cumulative progress
+        this.achievements.progress.gamesPlayed++;
+        this.achievements.storage.saveAchievementProgress(this.achievements.progress);
+
+        const achievementStats = {
+            score: this.score,
+            difficulty: this.difficulty,
+            mode: this.mode,
+            madeLeaderboard: isNewHighScore && this.score > 0
+        };
+        const newAchievements = this.achievements.checkAchievements(achievementStats);
+        if (this.ui && newAchievements.length > 0) {
+            this.ui.showAchievementToast(newAchievements);
+            this.audio.playAchievementUnlock();
         }
 
         this.setState(GameState.GAMEOVER);
@@ -3763,6 +4130,20 @@ class Game {
         this.tickInterval = 1000 / newRate;
     }
 
+    _checkFoodAchievements() {
+        const stats = {
+            score: this.score,
+            difficulty: this.difficulty,
+            mode: this.mode,
+            madeLeaderboard: false
+        };
+        const newAchievements = this.achievements.checkAchievements(stats);
+        if (this.ui && newAchievements.length > 0) {
+            this.ui.showAchievementToast(newAchievements);
+            this.audio.playAchievementUnlock();
+        }
+    }
+
     _getRegularDecay() {
         return this.accessibilityMode ? FOOD_DECAY_TICKS_ACCESSIBLE : FOOD_DECAY_TICKS;
     }
@@ -3895,6 +4276,8 @@ class Game {
             this.snake.grow();
             this.updateTickRate();
             this.audio.playEat();
+            this.achievements.onFoodEaten(FoodType.REGULAR);
+            this._checkFoodAchievements();
             this.announceScore(this.score);
             this.food.spawn(foodExclude, this.tickCount, FoodType.REGULAR, this._getRegularDecay());
         }
@@ -3915,6 +4298,8 @@ class Game {
                     this.snake.grow();
                     this.updateTickRate();
                     this.audio.playBonusEat();
+                    this.achievements.onFoodEaten(FoodType.BONUS);
+                    this._checkFoodAchievements();
                     this.announceScore(this.score);
                     break;
                 case FoodType.TOXIC: {
@@ -3924,6 +4309,8 @@ class Game {
                     const segmentsToRemove = this.calculateToxicSegments();
                     this.snake.removeSegments(segmentsToRemove);
                     this.audio.playToxicEat();
+                    this.achievements.onFoodEaten(FoodType.TOXIC);
+                    this._checkFoodAchievements();
                     // Game over if only head remains
                     if (this.snake.body.length <= 1) {
                         this.specialFood.reset();
@@ -4058,6 +4445,15 @@ class Game {
 
         // Clear input queue
         this.inputHandler.clearQueue();
+
+        // Reset per-session achievement tracking
+        this.achievements.resetSession();
+
+        // Track mode played (here rather than handleGameOver so Zen mode is recorded)
+        if (!this.achievements.progress.modesPlayed.includes(this.mode)) {
+            this.achievements.progress.modesPlayed.push(this.mode);
+            this.achievements.storage.saveAchievementProgress(this.achievements.progress);
+        }
     }
 
     destroy() {
@@ -4081,6 +4477,7 @@ if (typeof document !== 'undefined') {
         }
 
         const game = new Game(canvas);
+        window.__gameInstance = game;
 
         // Initialize UI manager
         const container = document.querySelector('.game-container');
@@ -4335,6 +4732,7 @@ if (typeof document !== 'undefined') {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         Game, Renderer, Snake, Food, InputHandler, StorageManager, UIManager, AudioManager,
+        AchievementManager, ACHIEVEMENTS,
         GameState, Direction, FoodType, GameMode, MODE_RULES, SCREEN_NAV, LEADERBOARD_MODES,
         GRID_WIDTH, GRID_HEIGHT, CELL_SIZE, CANVAS_WIDTH, CANVAS_HEIGHT,
         FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_DECAY_TICKS_ACCESSIBLE, FOOD_MAX_SPAWN_ATTEMPTS,
