@@ -877,7 +877,6 @@ class AchievementManager {
         if (newlyUnlocked.length > 0) {
             this.storage.saveAchievements(this.unlocked);
         }
-        this.storage.saveAchievementProgress(this.progress);
 
         return newlyUnlocked;
     }
@@ -3242,6 +3241,10 @@ class UIManager {
         if (filledLeaderboard) {
             this.game.achievements.progress.filledLeaderboard = true;
         }
+        if (!this.game.achievements.progress.difficultiesWithLeaderboard.includes(difficulty)) {
+            this.game.achievements.progress.difficultiesWithLeaderboard.push(difficulty);
+        }
+        this.game.achievements.storage.saveAchievementProgress(this.game.achievements.progress);
         const postLeaderboardAchievements = this.game.achievements.checkAchievements({
             score: this._initialsScore,
             difficulty,
@@ -3664,9 +3667,9 @@ class UIManager {
         toast.appendChild(icon);
         toast.appendChild(name);
         toastContainer.appendChild(toast);
-        setTimeout(() => {
+        this._toastTimerId = setTimeout(() => {
             toast.classList.add('achievement-toast__item--fade');
-            setTimeout(() => {
+            this._toastFadeTimerId = setTimeout(() => {
                 if (toast.parentNode) toast.parentNode.removeChild(toast);
                 this._showNextToast();
             }, 500);
@@ -3686,6 +3689,8 @@ class UIManager {
         document.removeEventListener('keydown', this._handleMenuKeyDown);
         this._achievementQueue = [];
         this._toastActive = false;
+        clearTimeout(this._toastTimerId);
+        clearTimeout(this._toastFadeTimerId);
     }
 }
 
@@ -3944,12 +3949,7 @@ class Game {
 
         // Update cumulative progress
         this.achievements.progress.gamesPlayed++;
-        if (!this.achievements.progress.modesPlayed.includes(this.mode)) {
-            this.achievements.progress.modesPlayed.push(this.mode);
-        }
-        if (isNewHighScore && this.score > 0 && !this.achievements.progress.difficultiesWithLeaderboard.includes(this.difficulty)) {
-            this.achievements.progress.difficultiesWithLeaderboard.push(this.difficulty);
-        }
+        this.achievements.storage.saveAchievementProgress(this.achievements.progress);
 
         const achievementStats = {
             score: this.score,
@@ -4130,6 +4130,20 @@ class Game {
         this.tickInterval = 1000 / newRate;
     }
 
+    _checkFoodAchievements() {
+        const stats = {
+            score: this.score,
+            difficulty: this.difficulty,
+            mode: this.mode,
+            madeLeaderboard: false
+        };
+        const newAchievements = this.achievements.checkAchievements(stats);
+        if (this.ui && newAchievements.length > 0) {
+            this.ui.showAchievementToast(newAchievements);
+            this.audio.playAchievementUnlock();
+        }
+    }
+
     _getRegularDecay() {
         return this.accessibilityMode ? FOOD_DECAY_TICKS_ACCESSIBLE : FOOD_DECAY_TICKS;
     }
@@ -4263,6 +4277,7 @@ class Game {
             this.updateTickRate();
             this.audio.playEat();
             this.achievements.onFoodEaten(FoodType.REGULAR);
+            this._checkFoodAchievements();
             this.announceScore(this.score);
             this.food.spawn(foodExclude, this.tickCount, FoodType.REGULAR, this._getRegularDecay());
         }
@@ -4284,6 +4299,7 @@ class Game {
                     this.updateTickRate();
                     this.audio.playBonusEat();
                     this.achievements.onFoodEaten(FoodType.BONUS);
+                    this._checkFoodAchievements();
                     this.announceScore(this.score);
                     break;
                 case FoodType.TOXIC: {
@@ -4294,6 +4310,7 @@ class Game {
                     this.snake.removeSegments(segmentsToRemove);
                     this.audio.playToxicEat();
                     this.achievements.onFoodEaten(FoodType.TOXIC);
+                    this._checkFoodAchievements();
                     // Game over if only head remains
                     if (this.snake.body.length <= 1) {
                         this.specialFood.reset();
@@ -4431,6 +4448,12 @@ class Game {
 
         // Reset per-session achievement tracking
         this.achievements.resetSession();
+
+        // Track mode played (here rather than handleGameOver so Zen mode is recorded)
+        if (!this.achievements.progress.modesPlayed.includes(this.mode)) {
+            this.achievements.progress.modesPlayed.push(this.mode);
+            this.achievements.storage.saveAchievementProgress(this.achievements.progress);
+        }
     }
 
     destroy() {

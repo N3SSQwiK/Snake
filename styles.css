@@ -1389,10 +1389,10 @@ kbd {
     gap: 0.5rem;
     padding: 0.625rem 1rem;
     margin-top: 0.5rem;
-    background: var(--ui-panel-bg, rgba(15, 15, 25, 0.92));
-    border: 1px solid var(--ui-accent, #6366f1);
+    background: var(--ui-glass-bg, rgba(15, 15, 25, 0.92));
+    border: 1px solid var(--ui-accent);
     border-radius: 0.5rem;
-    color: var(--ui-text, #e8e8f0);
+    color: var(--ui-text-primary, #e8e8f0);
     font-size: 0.8125rem;
     animation: toast-slide-in 0.3s ease-out;
     white-space: nowrap;
@@ -1403,7 +1403,7 @@ kbd {
 }
 
 .achievement-toast__label {
-    color: var(--ui-accent, #6366f1);
+    color: var(--ui-accent);
     font-weight: 600;
     font-size: 0.6875rem;
     text-transform: uppercase;
@@ -1462,8 +1462,8 @@ kbd {
 }
 
 .achievement-item--unlocked {
-    border-color: rgba(99, 102, 241, 0.25);
-    background: rgba(99, 102, 241, 0.06);
+    border-color: var(--ui-accent-glow);
+    background: rgba(16, 185, 129, 0.06);
 }
 
 .achievement-item__icon {
@@ -1484,7 +1484,7 @@ kbd {
 .achievement-item__name {
     font-weight: 500;
     font-size: 0.8125rem;
-    color: var(--ui-text, #e8e8f0);
+    color: var(--ui-text-primary, #e8e8f0);
 }
 
 .achievement-item__desc {

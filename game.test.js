@@ -5205,3 +5205,76 @@ describe('StorageManager achievement methods', () => {
         assert.deepStrictEqual(storage.getAchievementProgress(), progress);
     });
 });
+
+// =============================================================================
+// ACHIEVEMENT INTEGRATION TESTS (second-round review fixes)
+// =============================================================================
+
+describe('Achievement mode tracking at reset', () => {
+    let canvas;
+    let game;
+
+    beforeEach(() => {
+        global.localStorage.clear();
+        canvas = createMockCanvas();
+        game = new Game(canvas);
+    });
+
+    test('reset() tracks modesPlayed for classic mode', () => {
+        game.mode = GameMode.CLASSIC;
+        game.reset();
+        assert.ok(game.achievements.progress.modesPlayed.includes('classic'));
+    });
+
+    test('reset() tracks modesPlayed for zen mode (never triggers game over)', () => {
+        game.mode = GameMode.ZEN;
+        game.reset();
+        assert.ok(game.achievements.progress.modesPlayed.includes('zen'));
+    });
+
+    test('reset() does not duplicate modesPlayed entries', () => {
+        game.mode = GameMode.CLASSIC;
+        game.reset();
+        game.reset();
+        const count = game.achievements.progress.modesPlayed.filter(m => m === 'classic').length;
+        assert.strictEqual(count, 1);
+    });
+
+    test('reset() persists modesPlayed to storage', () => {
+        game.mode = GameMode.ZEN;
+        game.reset();
+        const saved = game.storage.getAchievementProgress();
+        assert.ok(saved.modesPlayed.includes('zen'));
+    });
+});
+
+describe('Achievement mid-game food checking', () => {
+    let storage;
+
+    beforeEach(() => {
+        global.localStorage.clear();
+        storage = new StorageManager();
+    });
+
+    test('checkAchievements returns firstBlood when food eaten mid-game', () => {
+        const am = new AchievementManager(storage);
+        am.onFoodEaten(FoodType.REGULAR);
+        const unlocked = am.checkAchievements({ score: 10, difficulty: 'medium', mode: 'classic', madeLeaderboard: false });
+        const ids = unlocked.map(a => a.id);
+        assert.ok(ids.includes('firstBlood'));
+    });
+
+    test('checkAchievements does not save progress when no achievements unlock', () => {
+        const am = new AchievementManager(storage);
+        // Unlock firstBlood first
+        am.onFoodEaten(FoodType.REGULAR);
+        am.checkAchievements({ score: 10, difficulty: 'medium', mode: 'classic', madeLeaderboard: false });
+
+        // Second check with same state — nothing new to unlock
+        let saveCalled = false;
+        const origSave = storage.saveAchievementProgress.bind(storage);
+        storage.saveAchievementProgress = (...args) => { saveCalled = true; origSave(...args); };
+        am.checkAchievements({ score: 10, difficulty: 'medium', mode: 'classic', madeLeaderboard: false });
+        assert.strictEqual(saveCalled, false);
+    });
+});
