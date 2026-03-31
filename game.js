@@ -79,7 +79,7 @@ const ACHIEVEMENTS = [
     {
         id: 'untouchable',
         name: 'Untouchable',
-        description: 'Score 100 on Easy difficulty',
+        description: 'Score 100 without wall collision (Easy difficulty)',
         icon: '\u2622',
         condition: (stats) => stats.score >= 100 && stats.difficulty === 'easy'
     },
@@ -109,9 +109,11 @@ const ACHIEVEMENTS = [
         name: 'All Rounder',
         description: 'Play every game mode at least once',
         icon: '\u2740',
-        condition: (stats, progress) => progress.modesPlayed.length >= 4
+        condition: (stats, progress) => progress.modesPlayed.length >= Object.keys(GameMode).length
     }
 ];
+Object.freeze(ACHIEVEMENTS);
+for (const a of ACHIEVEMENTS) Object.freeze(a);
 
 // Time Attack constants (values in ticks; 10 ticks/s)
 const TIME_ATTACK_DURATION = 600;              // 60 seconds
@@ -499,6 +501,11 @@ const SCREEN_NAV = {
     'leaderboard': {
         back: 'hideLeaderboard',
         focusEntry: '.screen-leaderboard .ui-panel__close',
+        audio: 'playBack'
+    },
+    'achievements': {
+        back: 'hideAchievements',
+        focusEntry: '.screen-achievements .ui-panel__close',
         audio: 'playBack'
     },
     'shortcuts': {
@@ -3587,7 +3594,7 @@ class UIManager {
             item.setAttribute('aria-label', `${a.name}: ${a.description}. ${a.unlocked ? 'Unlocked' : 'Locked'}`);
             const icon = document.createElement('span');
             icon.className = 'achievement-item__icon';
-            icon.textContent = a.unlocked ? a.icon : '\uD83D\uDD12';
+            icon.textContent = a.unlocked ? a.icon : '\u2737';
             icon.setAttribute('aria-hidden', 'true');
             const info = document.createElement('div');
             info.className = 'achievement-item__info';
@@ -3618,6 +3625,7 @@ class UIManager {
     }
 
     hideAchievements() {
+        this._releaseFocus();
         this.container.removeAttribute('data-ui');
     }
 
@@ -3634,7 +3642,7 @@ class UIManager {
         }
         this._toastActive = true;
         const achievement = this._achievementQueue.shift();
-        const toastContainer = document.querySelector('.achievement-toast');
+        const toastContainer = this.container.querySelector('.achievement-toast');
         if (!toastContainer) {
             this._toastActive = false;
             return;
@@ -3676,6 +3684,8 @@ class UIManager {
     destroy() {
         this.overlay.removeEventListener('click', this.handleOverlayClick);
         document.removeEventListener('keydown', this._handleMenuKeyDown);
+        this._achievementQueue = [];
+        this._toastActive = false;
     }
 }
 
