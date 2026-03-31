@@ -64,7 +64,8 @@ const createMockCanvas = () => {
 
 // Import game module
 const {
-    Game, Renderer, Snake, Food, InputHandler, StorageManager, UIManager,
+    Game, Renderer, Snake, Food, InputHandler, StorageManager, UIManager, AudioManager,
+    AchievementManager, ACHIEVEMENTS,
     GameState, Direction, FoodType, GameMode, MODE_RULES, SCREEN_NAV, LEADERBOARD_MODES,
     GRID_WIDTH, GRID_HEIGHT, CELL_SIZE, CANVAS_WIDTH, CANVAS_HEIGHT,
     FOOD_POINTS, FOOD_DECAY_TICKS, FOOD_DECAY_TICKS_ACCESSIBLE, FOOD_MAX_SPAWN_ATTEMPTS,
@@ -4938,5 +4939,269 @@ describe('Initials modal focus standardization', () => {
         for (const b of buttons) {
             assert.strictEqual(b.focus.mock.calls.length, 0);
         }
+    });
+});
+
+// =============================================================================
+// ACHIEVEMENT MANAGER TESTS
+// =============================================================================
+
+describe('AchievementManager', () => {
+    let storage;
+
+    beforeEach(() => {
+        global.localStorage.clear();
+        storage = new StorageManager();
+    });
+
+    test('constructor initializes with empty state', () => {
+        const am = new AchievementManager(storage);
+        assert.deepStrictEqual(am.getUnlocked(), []);
+        assert.strictEqual(am.getProgress().unlocked, 0);
+        assert.strictEqual(am.getProgress().total, ACHIEVEMENTS.length);
+    });
+
+    test('constructor loads persisted unlocks', () => {
+        storage.saveAchievements({ firstBlood: 1000 });
+        const am = new AchievementManager(storage);
+        assert.deepStrictEqual(am.getUnlocked(), ['firstBlood']);
+        assert.strictEqual(am.getProgress().unlocked, 1);
+    });
+
+    test('constructor handles corrupted achievement data', () => {
+        storage.set('achievements', 'corrupted');
+        const am = new AchievementManager(storage);
+        assert.deepStrictEqual(am.getUnlocked(), []);
+    });
+
+    test('constructor handles corrupted progress data', () => {
+        storage.set('achievementProgress', 'corrupted');
+        const am = new AchievementManager(storage);
+        assert.strictEqual(am.progress.gamesPlayed, 0);
+        assert.deepStrictEqual(am.progress.modesPlayed, []);
+    });
+
+    test('constructor handles array instead of object for achievements', () => {
+        storage.set('achievements', JSON.stringify([1, 2, 3]));
+        // StorageManager.get parses JSON, so this becomes an array
+        const am = new AchievementManager(storage);
+        assert.deepStrictEqual(am.getUnlocked(), []);
+    });
+
+    test('resetSession clears all session counters', () => {
+        const am = new AchievementManager(storage);
+        am.session.foodsEaten = 10;
+        am.session.toxicFoodsEaten = 2;
+        am.session.bonusFoodsEaten = 3;
+        am.resetSession();
+        assert.strictEqual(am.session.foodsEaten, 0);
+        assert.strictEqual(am.session.toxicFoodsEaten, 0);
+        assert.strictEqual(am.session.bonusFoodsEaten, 0);
+        assert.strictEqual(am.session.reachedMaxSpeed, false);
+    });
+
+    test('onFoodEaten increments regular food count', () => {
+        const am = new AchievementManager(storage);
+        am.onFoodEaten(FoodType.REGULAR);
+        am.onFoodEaten(FoodType.REGULAR);
+        assert.strictEqual(am.session.foodsEaten, 2);
+        assert.strictEqual(am.session.toxicFoodsEaten, 0);
+    });
+
+    test('onFoodEaten increments toxic food count', () => {
+        const am = new AchievementManager(storage);
+        am.onFoodEaten(FoodType.TOXIC);
+        assert.strictEqual(am.session.foodsEaten, 1);
+        assert.strictEqual(am.session.toxicFoodsEaten, 1);
+    });
+
+    test('onFoodEaten increments bonus food count', () => {
+        const am = new AchievementManager(storage);
+        am.onFoodEaten(FoodType.BONUS);
+        assert.strictEqual(am.session.foodsEaten, 1);
+        assert.strictEqual(am.session.bonusFoodsEaten, 1);
+    });
+
+    test('checkAchievements unlocks First Blood on first food eaten', () => {
+        const am = new AchievementManager(storage);
+        am.onFoodEaten(FoodType.REGULAR);
+        const unlocked = am.checkAchievements({ score: 10, difficulty: 'medium', mode: 'classic', madeLeaderboard: false });
+        const ids = unlocked.map(a => a.id);
+        assert.ok(ids.includes('firstBlood'));
+    });
+
+    test('checkAchievements does not re-unlock achievements', () => {
+        const am = new AchievementManager(storage);
+        am.onFoodEaten(FoodType.REGULAR);
+        am.checkAchievements({ score: 10, difficulty: 'medium', mode: 'classic', madeLeaderboard: false });
+        // Check again with same stats
+        const second = am.checkAchievements({ score: 10, difficulty: 'medium', mode: 'classic', madeLeaderboard: false });
+        const ids = second.map(a => a.id);
+        assert.ok(!ids.includes('firstBlood'));
+    });
+
+    test('checkAchievements unlocks Glutton at 50 foods', () => {
+        const am = new AchievementManager(storage);
+        for (let i = 0; i < 50; i++) am.onFoodEaten(FoodType.REGULAR);
+        const unlocked = am.checkAchievements({ score: 500, difficulty: 'medium', mode: 'classic', madeLeaderboard: false });
+        const ids = unlocked.map(a => a.id);
+        assert.ok(ids.includes('glutton'));
+    });
+
+    test('checkAchievements unlocks Century at score 100', () => {
+        const am = new AchievementManager(storage);
+        const unlocked = am.checkAchievements({ score: 100, difficulty: 'medium', mode: 'classic', madeLeaderboard: false });
+        const ids = unlocked.map(a => a.id);
+        assert.ok(ids.includes('century'));
+    });
+
+    test('checkAchievements unlocks Speed Demon when max speed reached', () => {
+        const am = new AchievementManager(storage);
+        am.session.reachedMaxSpeed = true;
+        const unlocked = am.checkAchievements({ score: 50, difficulty: 'medium', mode: 'classic', madeLeaderboard: false });
+        const ids = unlocked.map(a => a.id);
+        assert.ok(ids.includes('speedDemon'));
+    });
+
+    test('checkAchievements unlocks Marathon at 500 ticks', () => {
+        const am = new AchievementManager(storage);
+        am.session.ticksSurvived = 500;
+        const unlocked = am.checkAchievements({ score: 50, difficulty: 'medium', mode: 'classic', madeLeaderboard: false });
+        const ids = unlocked.map(a => a.id);
+        assert.ok(ids.includes('marathon'));
+    });
+
+    test('checkAchievements unlocks Top 10 when made leaderboard', () => {
+        const am = new AchievementManager(storage);
+        const unlocked = am.checkAchievements({ score: 50, difficulty: 'medium', mode: 'classic', madeLeaderboard: true });
+        const ids = unlocked.map(a => a.id);
+        assert.ok(ids.includes('top10'));
+    });
+
+    test('checkAchievements unlocks Untouchable on easy with 100 score', () => {
+        const am = new AchievementManager(storage);
+        const unlocked = am.checkAchievements({ score: 100, difficulty: 'easy', mode: 'classic', madeLeaderboard: false });
+        const ids = unlocked.map(a => a.id);
+        assert.ok(ids.includes('untouchable'));
+    });
+
+    test('checkAchievements does not unlock Untouchable on medium', () => {
+        const am = new AchievementManager(storage);
+        const unlocked = am.checkAchievements({ score: 100, difficulty: 'medium', mode: 'classic', madeLeaderboard: false });
+        const ids = unlocked.map(a => a.id);
+        assert.ok(!ids.includes('untouchable'));
+    });
+
+    test('checkAchievements unlocks Hazard Pay with toxic eaten and score > 0', () => {
+        const am = new AchievementManager(storage);
+        am.onFoodEaten(FoodType.TOXIC);
+        const unlocked = am.checkAchievements({ score: 10, difficulty: 'medium', mode: 'classic', madeLeaderboard: false });
+        const ids = unlocked.map(a => a.id);
+        assert.ok(ids.includes('hazardPay'));
+    });
+
+    test('checkAchievements unlocks Hard Mode Hero at 200 on hard', () => {
+        const am = new AchievementManager(storage);
+        const unlocked = am.checkAchievements({ score: 200, difficulty: 'hard', mode: 'classic', madeLeaderboard: false });
+        const ids = unlocked.map(a => a.id);
+        assert.ok(ids.includes('hardModeHero'));
+    });
+
+    test('checkAchievements unlocks Triple Threat with 3 difficulty leaderboards', () => {
+        const am = new AchievementManager(storage);
+        am.progress.difficultiesWithLeaderboard = ['easy', 'medium', 'hard'];
+        const unlocked = am.checkAchievements({ score: 50, difficulty: 'hard', mode: 'classic', madeLeaderboard: true });
+        const ids = unlocked.map(a => a.id);
+        assert.ok(ids.includes('tripleThreat'));
+    });
+
+    test('checkAchievements unlocks All Rounder with all 4 modes played', () => {
+        const am = new AchievementManager(storage);
+        am.progress.modesPlayed = ['classic', 'timeAttack', 'maze', 'zen'];
+        const unlocked = am.checkAchievements({ score: 10, difficulty: 'medium', mode: 'zen', madeLeaderboard: false });
+        const ids = unlocked.map(a => a.id);
+        assert.ok(ids.includes('allRounder'));
+    });
+
+    test('checkAchievements unlocks Perfectionist when leaderboard filled', () => {
+        const am = new AchievementManager(storage);
+        am.progress.filledLeaderboard = true;
+        const unlocked = am.checkAchievements({ score: 50, difficulty: 'medium', mode: 'classic', madeLeaderboard: true });
+        const ids = unlocked.map(a => a.id);
+        assert.ok(ids.includes('perfectionist'));
+    });
+
+    test('checkAchievements can unlock multiple achievements at once', () => {
+        const am = new AchievementManager(storage);
+        am.onFoodEaten(FoodType.REGULAR);
+        const unlocked = am.checkAchievements({ score: 100, difficulty: 'easy', mode: 'classic', madeLeaderboard: true });
+        const ids = unlocked.map(a => a.id);
+        assert.ok(ids.includes('firstBlood'));
+        assert.ok(ids.includes('century'));
+        assert.ok(ids.includes('untouchable'));
+        assert.ok(ids.includes('top10'));
+    });
+
+    test('checkAchievements persists to storage', () => {
+        const am = new AchievementManager(storage);
+        am.onFoodEaten(FoodType.REGULAR);
+        am.checkAchievements({ score: 10, difficulty: 'medium', mode: 'classic', madeLeaderboard: false });
+        const saved = storage.getAchievements();
+        assert.ok(saved.firstBlood);
+        assert.strictEqual(typeof saved.firstBlood, 'number');
+    });
+
+    test('getAll returns all achievements with unlock status', () => {
+        const am = new AchievementManager(storage);
+        am.onFoodEaten(FoodType.REGULAR);
+        am.checkAchievements({ score: 10, difficulty: 'medium', mode: 'classic', madeLeaderboard: false });
+        const all = am.getAll();
+        assert.strictEqual(all.length, ACHIEVEMENTS.length);
+        const fb = all.find(a => a.id === 'firstBlood');
+        assert.ok(fb.unlocked);
+        assert.ok(fb.unlockedAt);
+        const glutton = all.find(a => a.id === 'glutton');
+        assert.ok(!glutton.unlocked);
+        assert.strictEqual(glutton.unlockedAt, null);
+    });
+});
+
+describe('AudioManager achievement sound', () => {
+    test('playAchievementUnlock calls _playSequence', () => {
+        const audio = new AudioManager();
+        let called = false;
+        audio._playSequence = () => { called = true; };
+        audio.playAchievementUnlock();
+        assert.ok(called);
+    });
+});
+
+describe('StorageManager achievement methods', () => {
+    let storage;
+
+    beforeEach(() => {
+        global.localStorage.clear();
+        storage = new StorageManager();
+    });
+
+    test('getAchievements returns empty object by default', () => {
+        assert.deepStrictEqual(storage.getAchievements(), {});
+    });
+
+    test('saveAchievements and getAchievements roundtrip', () => {
+        storage.saveAchievements({ firstBlood: 1234 });
+        assert.deepStrictEqual(storage.getAchievements(), { firstBlood: 1234 });
+    });
+
+    test('getAchievementProgress returns defaults', () => {
+        const p = storage.getAchievementProgress();
+        assert.strictEqual(p.gamesPlayed, 0);
+        assert.deepStrictEqual(p.modesPlayed, []);
+    });
+
+    test('saveAchievementProgress and getAchievementProgress roundtrip', () => {
+        const progress = { gamesPlayed: 5, modesPlayed: ['classic'], difficultiesWithLeaderboard: ['easy'], filledLeaderboard: false };
+        storage.saveAchievementProgress(progress);
+        assert.deepStrictEqual(storage.getAchievementProgress(), progress);
     });
 });
