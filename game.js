@@ -4477,6 +4477,7 @@ if (typeof document !== 'undefined') {
         }
 
         const game = new Game(canvas);
+        window.__gameInstance = game;
 
         // Initialize UI manager
         const container = document.querySelector('.game-container');
