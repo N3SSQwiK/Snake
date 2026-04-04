@@ -3883,8 +3883,9 @@ class Game {
         this.colorblindMode = this.storage.get('colorblindMode', false);
         this.accessibilityMode = this.storage.get('accessibilityMode', false);
 
-        // Load saved theme
-        this.currentTheme = this.storage.get('theme', 'classic');
+        // Load saved theme (default to nexus on yosoy.nexus, classic elsewhere)
+        const defaultTheme = (typeof location !== 'undefined' && location.hostname === 'yosoy.nexus') ? 'nexus' : 'classic';
+        this.currentTheme = this.storage.get('theme', defaultTheme);
         this.applyTheme(this.currentTheme);
 
         // Initialize audio manager with saved settings
