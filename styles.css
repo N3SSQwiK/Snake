@@ -214,7 +214,8 @@ body {
 .screen-settings,
 .screen-initials,
 .screen-leaderboard,
-.screen-shortcuts {
+.screen-shortcuts,
+.screen-achievements {
     display: none;
     position: absolute;
     top: 0;

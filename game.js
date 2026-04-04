@@ -411,6 +411,41 @@ const THEMES = {
             goldGlow: 'rgba(255, 255, 0, 0.5)'
         },
         unlockCondition: { type: 'default' }
+    },
+    nexus: {
+        name: 'Nexus',
+        colors: {
+            background: '#FAFAF6',
+            grid: '#D4CFC6',
+            snake: '#1B4F7A',
+            snakeHead: '#0F3556',
+            snakeTail: '#2968A0',
+            snakeGlow: 'rgba(27, 79, 122, 0.25)',
+            snakeEyes: 'rgba(250, 250, 246, 0.9)',
+            food: '#C8956C',
+            bonusFood: '#D4A574',
+            poisonFood: '#8B6B5E',
+            foodStem: '#6B6258',
+            foodLeaf: '#5A7A5E',
+            scoreText: '#1A1714',
+            scoreShadow: 'rgba(250, 250, 246, 0.6)'
+        },
+        ui: {
+            accent: '#1B4F7A',
+            accentGlow: 'rgba(27, 79, 122, 0.25)',
+            accentHover: '#2968A0',
+            danger: '#B85450',
+            dangerGlow: 'rgba(184, 84, 80, 0.2)',
+            glass: 'rgba(0, 0, 0, 0.04)',
+            glassBorder: 'rgba(27, 79, 122, 0.10)',
+            glassHighlight: 'rgba(27, 79, 122, 0.20)',
+            textPrimary: 'rgba(26, 23, 20, 0.92)',
+            textSecondary: 'rgba(61, 56, 48, 0.70)',
+            textMuted: 'rgba(107, 98, 88, 0.70)',
+            gold: '#C8956C',
+            goldGlow: 'rgba(200, 149, 108, 0.35)'
+        },
+        unlockCondition: { type: 'default' }
     }
 };
 
@@ -756,6 +791,7 @@ class StorageManager {
     }
 
     isThemeUnlocked(themeName) {
+        if (THEMES[themeName]?.unlockCondition?.type === 'default') return true;
         return this.getUnlockedThemes().includes(themeName);
     }
 
@@ -2920,7 +2956,7 @@ class UIManager {
         const currentTheme = this.game.currentTheme;
 
         for (const [key, theme] of Object.entries(THEMES)) {
-            const isUnlocked = unlocked.includes(key);
+            const isUnlocked = this.game.storage.isThemeUnlocked(key);
             const isActive = key === currentTheme;
 
             const swatch = document.createElement('button');
