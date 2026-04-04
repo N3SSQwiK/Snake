@@ -1408,9 +1408,8 @@ kbd {
 
 .achievement-toast {
     position: absolute;
-    top: 0;
-    left: 50%;
-    transform: translateX(-50%);
+    top: 0.5rem;
+    right: 0.5rem;
     z-index: 100;
     pointer-events: none;
 }
