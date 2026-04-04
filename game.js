@@ -443,7 +443,8 @@ const THEMES = {
             textSecondary: 'rgba(61, 56, 48, 0.70)',
             textMuted: 'rgba(107, 98, 88, 0.70)',
             gold: '#c8956c',
-            goldGlow: 'rgba(200, 149, 108, 0.35)'
+            goldGlow: 'rgba(200, 149, 108, 0.35)',
+            font: "'Tomorrow', system-ui, sans-serif"
         },
         unlockCondition: { type: 'default' }
     }
@@ -4104,6 +4105,10 @@ class Game {
 
             // Body background for light theme
             document.body.style.backgroundColor = theme.colors.background;
+
+            // Theme font
+            const font = theme.ui.font || "'Inter', system-ui, -apple-system, sans-serif";
+            root.setProperty('--ui-font', font);
         }
     }
 
