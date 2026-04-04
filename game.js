@@ -411,6 +411,42 @@ const THEMES = {
             goldGlow: 'rgba(255, 255, 0, 0.5)'
         },
         unlockCondition: { type: 'default' }
+    },
+    nexus: {
+        name: 'Nexus',
+        colors: {
+            background: '#fafaf6',
+            grid: '#d4cfc6',
+            snake: '#1b4f7a',
+            snakeHead: '#0f3556',
+            snakeTail: '#2968a0',
+            snakeGlow: 'rgba(27, 79, 122, 0.25)',
+            snakeEyes: 'rgba(250, 250, 246, 0.9)',
+            food: '#c8956c',
+            bonusFood: '#d4a574',
+            poisonFood: '#8b6b5e',
+            foodStem: '#6b6258',
+            foodLeaf: '#5a7a5e',
+            scoreText: '#1a1714',
+            scoreShadow: 'rgba(250, 250, 246, 0.6)'
+        },
+        ui: {
+            accent: '#1b4f7a',
+            accentGlow: 'rgba(27, 79, 122, 0.25)',
+            accentHover: '#2968a0',
+            danger: '#b85450',
+            dangerGlow: 'rgba(184, 84, 80, 0.2)',
+            glass: 'rgba(0, 0, 0, 0.04)',
+            glassBorder: 'rgba(27, 79, 122, 0.10)',
+            glassHighlight: 'rgba(27, 79, 122, 0.20)',
+            textPrimary: 'rgba(26, 23, 20, 0.92)',
+            textSecondary: 'rgba(61, 56, 48, 0.70)',
+            textMuted: 'rgba(107, 98, 88, 0.70)',
+            gold: '#c8956c',
+            goldGlow: 'rgba(200, 149, 108, 0.35)',
+            font: "'Tomorrow', system-ui, sans-serif"
+        },
+        unlockCondition: { type: 'default' }
     }
 };
 
@@ -756,6 +792,7 @@ class StorageManager {
     }
 
     isThemeUnlocked(themeName) {
+        if (THEMES[themeName]?.unlockCondition?.type === 'default') return true;
         return this.getUnlockedThemes().includes(themeName);
     }
 
@@ -772,10 +809,7 @@ class StorageManager {
         for (const [key, theme] of Object.entries(THEMES)) {
             if (this.isThemeUnlocked(key)) continue;
             const cond = theme.unlockCondition;
-            if (cond.type === 'default') {
-                this.unlockTheme(key);
-                newlyUnlocked.push(key);
-            } else if (cond.type === 'score') {
+            if (cond.type === 'score') {
                 if (score >= cond.threshold) {
                     this.unlockTheme(key);
                     newlyUnlocked.push(key);
@@ -2916,11 +2950,10 @@ class UIManager {
         }
         grid.replaceChildren();
 
-        const unlocked = this.game.storage.getUnlockedThemes();
         const currentTheme = this.game.currentTheme;
 
         for (const [key, theme] of Object.entries(THEMES)) {
-            const isUnlocked = unlocked.includes(key);
+            const isUnlocked = this.game.storage.isThemeUnlocked(key);
             const isActive = key === currentTheme;
 
             const swatch = document.createElement('button');
@@ -3851,8 +3884,9 @@ class Game {
         this.colorblindMode = this.storage.get('colorblindMode', false);
         this.accessibilityMode = this.storage.get('accessibilityMode', false);
 
-        // Load saved theme
-        this.currentTheme = this.storage.get('theme', 'classic');
+        // Load saved theme (default to nexus on yosoy.nexus, classic elsewhere)
+        const defaultTheme = (typeof location !== 'undefined' && location.hostname === 'yosoy.nexus') ? 'nexus' : 'classic';
+        this.currentTheme = this.storage.get('theme', defaultTheme);
         this.applyTheme(this.currentTheme);
 
         // Initialize audio manager with saved settings
@@ -4071,6 +4105,10 @@ class Game {
 
             // Body background for light theme
             document.body.style.backgroundColor = theme.colors.background;
+
+            // Theme font
+            const font = theme.ui.font || "'Inter', system-ui, -apple-system, sans-serif";
+            root.setProperty('--ui-font', font);
         }
     }
 
