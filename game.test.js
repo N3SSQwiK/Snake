@@ -1888,6 +1888,18 @@ describe('Theme Unlocks', () => {
         const storage2 = new StorageManager('test_theme_');
         assert.ok(storage2.isThemeUnlocked('dark'));
     });
+
+    test('isThemeUnlocked returns true for default-type themes not in storage', () => {
+        assert.strictEqual(storage.isThemeUnlocked('nexus'), true);
+        assert.strictEqual(storage.isThemeUnlocked('highContrast'), true);
+    });
+
+    test('checkThemeUnlocks never returns default-type themes', () => {
+        const result = storage.checkThemeUnlocks(9999, 'hard');
+        assert.ok(!result.includes('nexus'));
+        assert.ok(!result.includes('highContrast'));
+        assert.ok(!result.includes('classic'));
+    });
 });
 
 // =============================================================================
